@@ -77,7 +77,7 @@ Hosted NIM is OpenAI-compatible at `https://integrate.api.nvidia.com/v1` ([LLM A
 | `PAPER_BROKER=off` | Always | No Alpaca (or any) broker. Stub throws if called. |
 | `DESK_STORE_PATH` | Optional | Override JSON store path. |
 
-A NIM call that fails falls back to mock prose; the badge reads **FALLBACK MOCK**. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are ignored — this desk does not call OpenAI or Anthropic.
+NIM is called with `stream: true` and a **180s** client timeout (`AbortSignal`). Cold start is about two minutes; non-stream requests can hang. `/api/desk/run` sets `maxDuration = 180`. The browser waits the same 180s. A NIM call that fails or times out falls back to mock prose; the badge reads **FALLBACK MOCK**. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are ignored — this desk does not call OpenAI or Anthropic.
 
 ## Health
 
