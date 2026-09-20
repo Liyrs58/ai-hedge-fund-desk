@@ -14,12 +14,14 @@ import {
   AGENTS,
   attachSectors,
   buildMockRun,
-  buildRiskChecks,
   cloneBook,
   fillTicket,
   getQuote,
   markBook,
+  normalizeBook,
   padSession,
+  priceTicket,
+  withPeak,
   type AgentId,
   type Book,
   type DebateMessage,
@@ -29,6 +31,7 @@ import {
 } from "@/lib/desk";
 
 const BOOK_KEY = "ahf:book";
+const BLOTTER_KEY = "ahf:blotter";
 
 function subscribeLg(onChange: () => void) {
   const mq = window.matchMedia("(min-width: 1024px)");
@@ -47,12 +50,14 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     [quotes],
   );
   const seedBook = useMemo(
-    () => attachSectors(cloneBook(session.book), quotes),
+    () => withPeak(attachSectors(cloneBook(session.book), quotes), quotes),
     [quotes, session.book],
   );
 
   const [ticker, setTicker] = useState(quotes[0]?.symbol ?? "NVDA");
-  const [book, setBook] = usePersisted<Book>(BOOK_KEY, seedBook);
+  const [bookRaw, setBook] = usePersisted<Book>(BOOK_KEY, seedBook);
+  const book = useMemo(() => normalizeBook(bookRaw), [bookRaw]);
+  const [blotter, setBlotter] = usePersisted<Ticket[]>(BLOTTER_KEY, session.blotter);
   const [run, setRun] = useState<DeskRun | null>(null);
   const [cursor, setCursor] = useState(0);
   const [pace, setPace] = useState<Pace>("stream");
@@ -82,6 +87,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   const ticket = run && proposalVisible ? run.ticket : null;
   const clock = now ? padSession(now) : "--:--:--";
   const uptime = formatUptime(ticks * 1000);
+  const checks = run && proposalVisible ? run.checks : [];
 
   const lastAt = useMemo(() => {
     const map = emptyTimes();
@@ -92,11 +98,6 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   const statuses = useMemo(
     () => deriveDisplay(messages, writing, running),
     [messages, writing, running],
-  );
-
-  const checks = useMemo(
-    () => (ticket ? buildRiskChecks(ticket, quote, exposure) : []),
-    [ticket, quote, exposure],
   );
 
   useEffect(() => {
@@ -114,7 +115,8 @@ export function DeskApp({ session }: { session: SessionPayload }) {
       const built = buildMockRun(
         ticker,
         q,
-        exposure.nav,
+        book,
+        quotes,
         new Date().toISOString(),
       );
       const next: DeskRun = {
@@ -123,12 +125,11 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         quote: q,
         messages: built.messages,
         ticket: built.ticket,
+        checks: built.checks,
         provider: "mock",
         fallbackFrom: null,
       };
       setRun(next);
-      // Instant dumps the full tape. Stream puts the first mark on immediately
-      // so Run desk never looks dead while the rest of the script plays.
       setCursor(
         pace === "instant"
           ? next.messages.length
@@ -141,7 +142,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         err instanceof Error ? err.message : "Desk failed to open the tape.",
       );
     }
-  }, [ticker, exposure.nav, pace]);
+  }, [ticker, book, quotes, pace]);
 
   const skipToMark = useCallback(() => {
     if (!run) return;
@@ -150,30 +151,42 @@ export function DeskApp({ session }: { session: SessionPayload }) {
 
   const onApprove = useCallback(() => {
     if (!run?.ticket || run.ticket.status !== "proposed") return;
-    const next: Ticket = { ...run.ticket, status: "filled" };
-    if (next.side !== "HOLD" && next.shares > 0) {
-      setBook((prev) => attachSectors(fillTicket(prev, next), quotes));
+    const priced = priceTicket(
+      { ...run.ticket, status: "filled" },
+      quoteMap[run.ticket.ticker] ?? quote,
+    );
+    if (priced.side !== "HOLD" && priced.shares > 0 && !priced.vetoed) {
+      setBook((prev) =>
+        withPeak(
+          attachSectors(
+            fillTicket(normalizeBook(prev), priced, quoteMap[priced.ticker] ?? quote),
+            quotes,
+          ),
+          quotes,
+        ),
+      );
     }
-    setRun({ ...run, ticket: next });
+    setRun({ ...run, ticket: priced });
+    setBlotter((prev) => [priced, ...prev].slice(0, 24));
     setCursor(run.messages.length);
-  }, [run, quotes, setBook]);
+  }, [run, quotes, quote, quoteMap, setBook, setBlotter]);
 
   const onVeto = useCallback(() => {
     if (!run?.ticket || run.ticket.status !== "proposed") return;
-    setRun({
-      ...run,
-      ticket: { ...run.ticket, status: "vetoed", vetoed: true },
-    });
+    const next: Ticket = { ...run.ticket, status: "vetoed", vetoed: true };
+    setRun({ ...run, ticket: next });
+    setBlotter((prev) => [next, ...prev].slice(0, 24));
     setCursor(run.messages.length);
-  }, [run]);
+  }, [run, setBlotter]);
 
   const resetBook = useCallback(() => {
     setBook(seedBook);
+    setBlotter(session.blotter);
     setRun(null);
     setCursor(0);
     setFocus(null);
     setError(null);
-  }, [seedBook, setBook]);
+  }, [seedBook, session.blotter, setBook, setBlotter]);
 
   const pane = (
     <AgentRoster
@@ -206,6 +219,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
       book={book}
       exposure={exposure}
       quotes={quoteMap}
+      blotter={blotter}
       onVeto={onVeto}
       onApprove={onApprove}
     />
@@ -263,6 +277,9 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   );
 
   const showTabs = view === "tabs" || !isLg;
+  const llmLabel = run?.fallbackFrom
+    ? `FALLBACK MOCK`
+    : (run?.provider ?? session.provider).toUpperCase();
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-paper">
@@ -304,6 +321,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
           <span className="text-copper">LIVE</span>
         </span>
         <span>DATA: PAPER</span>
+        <span>LLM: {llmLabel}</span>
         <span>MARKET: {marketLabel(now)}</span>
         <span>LATENCY: 6ms</span>
         <span>FEED: PRIMARY</span>
@@ -317,10 +335,16 @@ export function DeskApp({ session }: { session: SessionPayload }) {
 function emptyTimes(): Record<AgentId, string> {
   return {
     fundamental: "09:41:02",
+    news: "09:41:06",
     sentiment: "09:41:08",
     technical: "09:41:45",
+    bull: "09:41:51",
+    bear: "09:41:57",
     trader: "09:42:03",
-    risk: "09:41:58",
+    aggressive: "09:42:10",
+    conservative: "09:42:14",
+    neutral: "09:42:18",
+    risk: "09:42:22",
   };
 }
 
@@ -331,6 +355,7 @@ function deriveDisplay(
 ): Record<AgentId, DisplayStatus> {
   const spoken = new Set(messages.map((m) => m.agent));
   const out = {} as Record<AgentId, DisplayStatus>;
+  const committee: AgentId[] = ["aggressive", "conservative", "neutral"];
   for (const agent of AGENTS) {
     if (writing === agent.id) {
       out[agent.id] = "SPEAKING";
@@ -338,6 +363,10 @@ function deriveDisplay(
     }
     if (running) {
       if (agent.id === "trader" && !spoken.has("trader")) {
+        out[agent.id] = "READY";
+        continue;
+      }
+      if (committee.includes(agent.id) && spoken.has("trader") && !spoken.has(agent.id)) {
         out[agent.id] = "READY";
         continue;
       }
