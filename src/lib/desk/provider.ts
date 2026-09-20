@@ -1,6 +1,8 @@
-import { buildMockRun } from "./debates";
+import { normalizeBook, SEED_BOOK } from "./book";
+import { UNIVERSE } from "./universe";
+import { runPipeline } from "./pipeline";
 import { STARTING_NAV } from "./limits";
-import type { DeskRun, ProviderId, Quote } from "./types";
+import type { Book, DebateMessage, DeskRun, ProviderId, Quote } from "./types";
 
 export function detectProvider(): ProviderId {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
@@ -24,43 +26,22 @@ export function detectProvider(): ProviderId {
   return "mock";
 }
 
-const LIVE_PROMPT = `You are the risk chair of a paper trading desk. Return ONLY JSON:
-{
-  "messages": [{"agent":"fundamental|sentiment|technical|trader|risk","kind":"note|thesis|rebuttal|proposal|veto|mark","body":"..."}],
-  "ticket": {
-    "side":"BUY|SELL|HOLD",
-    "proposedSide":"BUY|SELL|HOLD",
-    "proposedSizePct": number,
-    "sizePct": number,
-    "stop": number|null,
-    "thesis":"...",
-    "riskNote":"...",
-    "vetoed": boolean,
-    "trimmed": boolean
-  }
-}
-Rules: 5 agents must speak. Risk may veto or trim. Size is % of NAV. Concrete desk language. No marketing.`;
+const REWRITE_PROMPT = `You are rewriting a paper-trading desk transcript.
+Return ONLY JSON: { "bodies": string[] }
+The array MUST be the same length and order as the input messages.
+Rewrite each body in clipped desk English (no marketing, no adjectives-for-hire).
+Do not change numbers, tickers, sides, sizes, stops, or who is speaking.
+Do not add agents. Do not invent fills.`;
 
-interface LiveJson {
-  messages: DeskRun["messages"];
-  ticket: {
-    side: DeskRun["ticket"]["side"];
-    proposedSide: DeskRun["ticket"]["proposedSide"];
-    proposedSizePct: number;
-    sizePct: number;
-    stop: number | null;
-    thesis: string;
-    riskNote: string;
-    vetoed: boolean;
-    trimmed: boolean;
-  };
-}
-
-function extractJson(text: string): LiveJson {
+function extractBodies(text: string, expected: number): string[] {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < 0) throw new Error("No JSON in model output");
-  return JSON.parse(text.slice(start, end + 1)) as LiveJson;
+  const parsed = JSON.parse(text.slice(start, end + 1)) as { bodies?: string[] };
+  if (!Array.isArray(parsed.bodies) || parsed.bodies.length !== expected) {
+    throw new Error("body count mismatch");
+  }
+  return parsed.bodies.map((b) => String(b));
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
@@ -72,9 +53,9 @@ async function callOpenAI(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
-        { role: "system", content: LIVE_PROMPT },
+        { role: "system", content: REWRITE_PROMPT },
         { role: "user", content: prompt },
       ],
     }),
@@ -96,8 +77,8 @@ async function callAnthropic(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-0",
-      max_tokens: 2000,
-      messages: [{ role: "user", content: `${LIVE_PROMPT}\n\n${prompt}` }],
+      max_tokens: 2500,
+      messages: [{ role: "user", content: `${REWRITE_PROMPT}\n\n${prompt}` }],
     }),
   });
   if (!res.ok) throw new Error(`Anthropic ${res.status}`);
@@ -116,7 +97,7 @@ async function callGemini(prompt: string): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `${LIVE_PROMPT}\n\n${prompt}` }] }],
+        contents: [{ parts: [{ text: `${REWRITE_PROMPT}\n\n${prompt}` }] }],
       }),
     },
   );
@@ -136,9 +117,9 @@ async function callGrok(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: process.env.XAI_MODEL ?? "grok-3",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
-        { role: "system", content: LIVE_PROMPT },
+        { role: "system", content: REWRITE_PROMPT },
         { role: "user", content: prompt },
       ],
     }),
@@ -165,85 +146,70 @@ async function liveText(provider: ProviderId, prompt: string): Promise<string> {
   }
 }
 
-function quoteBrief(quote: Quote): string {
-  return [
-    `${quote.symbol} ${quote.name} ${quote.sector}`,
-    `mark ${quote.mark} ${quote.changePct}%`,
-    `RSI ${quote.rsi14} MACD ${quote.macdHist} 50d ${quote.sma50} 200d ${quote.sma200}`,
-    `PE ${quote.peNtm} FCF ${quote.fcfYield}% IV ${quote.iv30} beta ${quote.beta}`,
-  ].join(" | ");
+function packMessages(messages: DebateMessage[]): string {
+  return JSON.stringify(
+    messages.map((m) => ({
+      agent: m.agent,
+      kind: m.kind,
+      body: m.body,
+      score: m.score,
+    })),
+  );
+}
+
+function applyBodies(
+  messages: DebateMessage[],
+  bodies: string[],
+): DebateMessage[] {
+  return messages.map((m, i) => ({ ...m, body: bodies[i] ?? m.body }));
 }
 
 export async function runDesk(
   ticker: string,
   quote: Quote,
-  nav = STARTING_NAV,
+  book: Book = SEED_BOOK,
+  quotes: Quote[] = UNIVERSE,
 ): Promise<DeskRun> {
   const ts = new Date().toISOString();
   const provider = detectProvider();
-  const mock = buildMockRun(ticker, quote, nav, ts);
+  const computed = runPipeline({
+    ticker,
+    quote,
+    book: normalizeBook(book),
+    quotes,
+    ts,
+  });
+
+  const base: DeskRun = {
+    id: `run-${ticker}-${Date.now()}`,
+    ticker: quote.symbol,
+    quote,
+    messages: computed.messages,
+    ticket: computed.ticket,
+    checks: computed.checks,
+    provider: "mock",
+    fallbackFrom: null,
+  };
 
   if (provider === "mock") {
-    return {
-      id: `run-${ticker}-${Date.now()}`,
-      ticker: quote.symbol,
-      quote,
-      messages: mock.messages,
-      ticket: mock.ticket,
-      provider: "mock",
-      fallbackFrom: null,
-    };
+    return base;
   }
 
   try {
     const text = await liveText(
       provider,
-      `Name: ${quoteBrief(quote)}\nNAV: ${nav}\nPaper only. Produce the debate and final ticket.`,
+      `NAV context ${STARTING_NAV}. Rewrite these ${computed.messages.length} messages:\n${packMessages(computed.messages)}`,
     );
-    const live = extractJson(text);
-    const messages = live.messages.map((m, i) => ({
-      id: `${ticker}-live-${i + 1}`,
-      agent: m.agent,
-      kind: m.kind,
-      body: m.body,
-      delayMs: i === 0 ? 420 : 720,
-      at: mock.messages[i]?.at ?? "09:41:03",
-    }));
-    const shares =
-      live.ticket.side === "HOLD"
-        ? 0
-        : Math.round((nav * (live.ticket.sizePct / 100)) / quote.mark);
-    const proposedShares =
-      live.ticket.proposedSide === "HOLD"
-        ? 0
-        : Math.round((nav * (live.ticket.proposedSizePct / 100)) / quote.mark);
-    const ticket = {
-      ...mock.ticket,
-      ...live.ticket,
-      id: `${quote.symbol}-${ts}`,
-      ticker: quote.symbol,
-      mark: quote.mark,
-      shares,
-      proposedShares,
-      ts,
-      status: "proposed" as const,
-    };
+    const bodies = extractBodies(text, computed.messages.length);
     return {
-      id: `run-${ticker}-${Date.now()}`,
-      ticker: quote.symbol,
-      quote,
-      messages,
-      ticket,
+      ...base,
+      messages: applyBodies(computed.messages, bodies),
       provider,
       fallbackFrom: null,
     };
   } catch {
     return {
-      id: `run-${ticker}-${Date.now()}`,
-      ticker: quote.symbol,
-      quote,
-      messages: mock.messages,
-      ticket: mock.ticket,
+      ...base,
       provider: "mock",
       fallbackFrom: provider,
     };
