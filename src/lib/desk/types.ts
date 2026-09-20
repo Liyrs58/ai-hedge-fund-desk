@@ -32,6 +32,8 @@ export type TicketStatus =
 
 export type ProviderId = "mock" | "openai" | "anthropic" | "gemini" | "grok";
 
+export type QuoteSource = "sample" | "yahoo";
+
 export type RiskDecision = "pass" | "trim" | "veto";
 
 export type CheckFlag = "OK" | "WARNING" | "FAIL";
@@ -155,6 +157,7 @@ export interface SessionPayload {
   sessionLabel: string;
   provider: ProviderId;
   quotes: Quote[];
+  quoteSource: QuoteSource;
   book: Book;
   blotter: Ticket[];
   limits: RiskLimits;

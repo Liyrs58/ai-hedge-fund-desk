@@ -1,4 +1,15 @@
+import { roundPx } from "./signals";
 import type { Quote } from "./types";
+
+/** Last / change / volume overlay from Yahoo or any other mark source. */
+export interface MarkSnap {
+  symbol: string;
+  mark: number;
+  change: number;
+  changePct: number;
+  volumeM: number;
+  spark: number[];
+}
 
 function walk(seed: number, start: number, n = 24): number[] {
   let x = start;
@@ -147,4 +158,24 @@ export function getQuote(symbol: string): Quote {
     throw new Error(`Unknown ticker ${symbol}`);
   }
   return quote;
+}
+
+export function overlayQuotes(base: Quote[], snaps: MarkSnap[]): Quote[] {
+  const map = Object.fromEntries(snaps.map((s) => [s.symbol, s]));
+  return base.map((q) => {
+    const snap = map[q.symbol];
+    if (!snap || snap.mark <= 0) return q;
+    return {
+      ...q,
+      mark: snap.mark,
+      change: snap.change,
+      changePct: snap.changePct,
+      volumeM: snap.volumeM > 0 ? snap.volumeM : q.volumeM,
+      spark: snap.spark.length >= 8 ? snap.spark : [...q.spark.slice(0, -1), snap.mark].map(roundPx),
+    };
+  });
+}
+
+export function quoteBySymbol(quotes: Quote[], symbol: string): Quote | undefined {
+  return quotes.find((q) => q.symbol === symbol.toUpperCase());
 }
