@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { usePersisted } from "@/hooks/use-persisted";
 import { AgentRoster, type DisplayStatus } from "./roster";
 import { ControlStrip, type Pace, type View } from "./controls";
 import { DebateStream } from "./tape";
-import { DeskHeader } from "./header";
+import { DeskHeader, type LlmBadge } from "./header";
 import { PositionTicket } from "./ticket-panel";
 import { LiveDot } from "./marks";
 import { marketLabel, useNow } from "./session-clock";
@@ -20,6 +19,7 @@ import {
   normalizeBook,
   padSession,
   priceTicket,
+  SEED_BLOTTER,
   UNIVERSE,
   withPeak,
   type AgentId,
@@ -34,6 +34,25 @@ import {
 
 const BOOK_KEY = "ahf:book";
 const BLOTTER_KEY = "ahf:blotter";
+
+function writeLocal(book: Book, blotter: Ticket[]) {
+  try {
+    window.localStorage.setItem(BOOK_KEY, JSON.stringify(book));
+    window.localStorage.setItem(BLOTTER_KEY, JSON.stringify(blotter));
+  } catch {
+    /* private mode */
+  }
+}
+
+function pushStore(book: Book, blotter: Ticket[], reset = false) {
+  writeLocal(book, blotter);
+  void fetch("/api/desk/book", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(reset ? { reset: true } : { book, blotter }),
+  });
+}
 
 function subscribeLg(onChange: () => void) {
   const mq = window.matchMedia("(min-width: 1024px)");
@@ -66,9 +85,9 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   );
 
   const [ticker, setTicker] = useState(seedQuotes[0]?.symbol ?? "NVDA");
-  const [bookRaw, setBook] = usePersisted<Book>(BOOK_KEY, seedBook);
+  const [bookRaw, setBookRaw] = useState<Book>(() => normalizeBook(session.book));
   const book = useMemo(() => normalizeBook(bookRaw), [bookRaw]);
-  const [blotter, setBlotter] = usePersisted<Ticket[]>(BLOTTER_KEY, session.blotter);
+  const [blotter, setBlotter] = useState<Ticket[]>(session.blotter);
   const [run, setRun] = useState<DeskRun | null>(null);
   const [cursor, setCursor] = useState(0);
   const [pace, setPace] = useState<Pace>("stream");
@@ -82,6 +101,73 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   useEffect(() => {
     const id = setInterval(() => setTicks((t) => t + 1), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    writeLocal(book, blotter);
+  }, [book, blotter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/desk/book", { cache: "no-store" });
+        const data = (await res.json()) as {
+          book?: Book;
+          blotter?: Ticket[];
+          updatedAt?: string | null;
+        };
+        if (cancelled || !data.book) return;
+        if (data.updatedAt) {
+          setBookRaw(normalizeBook(data.book));
+          if (Array.isArray(data.blotter)) setBlotter(data.blotter);
+          return;
+        }
+        const localBook = window.localStorage.getItem(BOOK_KEY);
+        if (!localBook) return;
+        const parsed = normalizeBook(JSON.parse(localBook) as Book);
+        const rawBlotter = window.localStorage.getItem(BLOTTER_KEY);
+        const parsedBlotter = rawBlotter
+          ? (JSON.parse(rawBlotter) as Ticket[])
+          : session.blotter;
+        setBookRaw(parsed);
+        setBlotter(parsedBlotter);
+        pushStore(parsed, parsedBlotter);
+      } catch {
+        /* keep the SSR snapshot */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session.blotter]);
+
+  const [healthLine, setHealthLine] = useState("…");
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          paperBroker?: string;
+          liveTrading?: boolean;
+          llm?: { badge?: string };
+          quotes?: { badge?: string };
+          store?: { durable?: boolean };
+        };
+        const marks = data.quotes?.badge ?? "UNKNOWN";
+        const llm = data.llm?.badge ?? "MOCK";
+        const store = data.store?.durable ? "FILE" : "TMP";
+        setHealthLine(
+          `${data.ok ? "OK" : "DOWN"} MARKS ${marks} LLM ${llm} STORE ${store} BROKER ${data.paperBroker ?? "off"} LIVE ${data.liveTrading === true}`,
+        );
+      } catch {
+        setHealthLine("DOWN");
+      }
+    };
+    void load();
+    const id = window.setInterval(() => void load(), 20000);
+    return () => window.clearInterval(id);
   }, []);
 
   const quote = quoteMap[ticker] ?? quotes[0] ?? UNIVERSE[0];
@@ -212,32 +298,40 @@ export function DeskApp({ session }: { session: SessionPayload }) {
       quoteMap[run.ticket.ticker] ?? quote,
     );
     if (priced.side !== "HOLD" && priced.shares > 0 && !priced.vetoed) {
-      setBook((prev) =>
-        withPeak(
-          attachSectors(
-            fillTicket(normalizeBook(prev), priced, quoteMap[priced.ticker] ?? quote),
-            quotes,
-          ),
+      const nextBook = withPeak(
+        attachSectors(
+          fillTicket(normalizeBook(book), priced, quoteMap[priced.ticker] ?? quote),
           quotes,
         ),
+        quotes,
       );
+      const nextBlotter = [priced, ...blotter].slice(0, 24);
+      setBookRaw(nextBook);
+      setBlotter(nextBlotter);
+      pushStore(nextBook, nextBlotter);
+    } else {
+      const nextBlotter = [priced, ...blotter].slice(0, 24);
+      setBlotter(nextBlotter);
+      pushStore(book, nextBlotter);
     }
     setRun({ ...run, ticket: priced });
-    setBlotter((prev) => [priced, ...prev].slice(0, 24));
     setCursor(run.messages.length);
-  }, [run, quotes, quote, quoteMap, setBook, setBlotter, session.liveTrading]);
+  }, [run, quotes, quote, quoteMap, book, blotter, session.liveTrading]);
 
   const onVeto = useCallback(() => {
     if (!run?.ticket || run.ticket.status !== "proposed") return;
     const next: Ticket = { ...run.ticket, status: "vetoed", vetoed: true };
     setRun({ ...run, ticket: next });
-    setBlotter((prev) => [next, ...prev].slice(0, 24));
+    const nextBlotter = [next, ...blotter].slice(0, 24);
+    setBlotter(nextBlotter);
+    pushStore(book, nextBlotter);
     setCursor(run.messages.length);
-  }, [run, setBlotter]);
+  }, [run, book, blotter]);
 
   const resetBook = useCallback(() => {
-    setBook(seedBook);
-    setBlotter(session.blotter);
+    setBookRaw(seedBook);
+    setBlotter(SEED_BLOTTER);
+    pushStore(seedBook, SEED_BLOTTER, true);
     setQuotes(UNIVERSE);
     setQuoteSource("sample");
     setMarksNote(null);
@@ -245,7 +339,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     setCursor(0);
     setFocus(null);
     setError(null);
-  }, [seedBook, session.blotter, setBook, setBlotter]);
+  }, [seedBook]);
 
   const refreshMarks = useCallback(async () => {
     setMarksBusy(true);
@@ -366,10 +460,10 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   );
 
   const showTabs = view === "tabs" || !isLg;
-  const llmLabel: "MOCK" | "NVIDIA" | "FALLBACK MOCK" = run?.fallbackFrom
+  const llmLabel: LlmBadge = run?.fallbackFrom
     ? "FALLBACK MOCK"
     : (run?.provider ?? session.provider) === "nvidia"
-      ? "NVIDIA"
+      ? "NVIDIA/google/gemma-4-31b-it"
       : "MOCK";
 
   return (
@@ -419,6 +513,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         </span>
         <span>LLM: {llmLabel}</span>
         <span>TRADE: PAPER</span>
+        <span>HEALTH: {healthLine}</span>
         <span>MARKET: {marketLabel(now)}</span>
         <span>LATENCY: 6ms</span>
         <span>FEED: PRIMARY</span>
