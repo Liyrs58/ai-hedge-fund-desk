@@ -1,10 +1,12 @@
 # AHF · Desk 04
 
-Paper trading desk. Eleven seats mark a name on a shared blackboard, debate, and open a ticket. Risk has a real veto. Nothing here is live capital, and nothing here is advice.
+Eleven-seat **paper** trading desk. Analysts mark a name on a shared blackboard, bull and bear argue, a trader proposes, a three-seat risk committee votes, and a judge applies hard book limits. You still stamp **Approve** or **Veto**. Nothing here is live capital. Nothing here is advice.
 
-The desk follows [TradingAgents](https://github.com/TauricResearch/TradingAgents) (Xiao, Su, Deng, et al., arXiv [2412.20138](https://arxiv.org/abs/2412.20138)): fundamental / news / sentiment / technical analysts, bull and bear researchers (multi-round), a trader, a three-seat risk committee (aggressive / conservative / neutral), and a risk judge who applies portfolio limits. This repo is a TypeScript paper desk of that conversation, not a port of the Python research stack.
+**Best use case:** a TradingAgents teaching tool and multi-agent paper-trading research desk — walk a debate → ticket → risk veto/trim → paper fill without brokers, vendors, or API keys.
 
-## Run
+It follows [TradingAgents](https://github.com/TauricResearch/TradingAgents) (Xiao, Su, Deng, et al., arXiv [2412.20138](https://arxiv.org/abs/2412.20138)): fundamental / news / sentiment / technical, two-round bull/bear, trader, aggressive / conservative / neutral risk, then a judge. This repo is a TypeScript paper desk of that conversation, not a port of the Python research stack.
+
+## Run (zero keys)
 
 ```bash
 npm install
@@ -13,13 +15,48 @@ npm run dev
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
-The click-through is **client-side paper only**. No OpenAI/Anthropic/Gemini/Grok call, and no `/api` fetch, is required to run a name, veto, or approve.
+No `.env` file is required. The click-through is **client-side paper**: mock LLM, sample marks, local book/blotter. Run a name, veto, or approve without a network call.
 
 ```bash
-npm run build   # must pass
+npm run build    # production compile — must pass
+npm run paper    # offline debate → risk → fill smoke (NVDA buy + fill, TSLA short)
 ```
 
-## Keys
+Suggested path on the seed book (AAPL / MSFT / JPM long):
+
+1. NAME `NVDA`, **PACE → Instant**, **Run desk**.
+2. Eleven seats on the tape. Ticket is a BUY (Sato may trim). **Approve**. Book gains NVDA at fill px (slip + 1bp fee), not the round mark.
+3. **Reset book**. NAME `TSLA`, **Run desk**, **Veto**. Status VETOED. Book still seed only.
+
+## Deploy on Vercel
+
+The app is a standard Next.js App Router project. **No environment variables are required** for the public demo.
+
+1. Fork or push this repo to GitHub.
+2. [Import the project](https://vercel.com/new) on Vercel. Framework preset: **Next.js**.
+3. Leave env empty. Deploy.
+
+CLI equivalent from a clone:
+
+```bash
+npx vercel
+```
+
+Production build command is `npm run build`. `package-lock.json` is a normal `npm install` lockfile. There is **no** GitHub Action that assembles or patches the lockfile.
+
+Optional LLM keys (see below) can be added later in the Vercel project **Settings → Environment Variables**. They only rewrite debate wording.
+
+## Optional: live marks
+
+**Refresh marks** (strip, next to Reset book) asks Yahoo Finance for last / change / volume / spark on the six names. No Yahoo key.
+
+- Success: header marks update; the next **Run desk** uses those last prices. Footer reads `DATA: YAHOO+PAPER`. PE, RSI, MACD, IV, beta stay paper so the teaching path stays deterministic.
+- Failure (blocked network, timeout, empty payload): sample marks stay on the tape. Footer explains. Offline **Run desk** is unchanged — the button is the only Yahoo call.
+- **Reset book** restores sample marks as well as the seed book.
+
+## Optional: LLM rewrite
+
+Copy `.env.example` to `.env.local` only if you want live prose.
 
 | Env | Required? | What it does |
 | --- | --- | --- |
@@ -30,24 +67,24 @@ npm run build   # must pass
 | `LLM_PROVIDER=gemini` + `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Optional | Same, Gemini. |
 | `LLM_PROVIDER=grok` + `XAI_API_KEY` | Optional | Same, xAI. |
 
-Copy `.env.example` to `.env.local` to set a live provider. Optional `*_MODEL` overrides are in that file. A live call that fails falls back to mock prose; the footer reads `FALLBACK MOCK`. Risk numbers and fills are never taken from the model.
+A live call that fails falls back to mock prose; the footer reads `FALLBACK MOCK`. Ticket size, risk verdict, and fills are never taken from the model.
 
-There is no broker, no order router, and no market-data vendor. Book and blotter persist in `localStorage`.
+There is no broker, no order router, and no paid market-data vendor. Book and blotter persist in `localStorage`.
 
-## What is real vs mocked
+## What is real vs stubbed
 
-**Real (computed on every run, from the current book + quote snapshot + paper news wire):**
+**Real (computed on every run from the current book + quote snapshot + paper news wire):**
 
-- Blackboard pipeline. Each seat is a function that reads prior notes (stance, score, claims, `cited` ids) and appends its own. Analysts run first. Bull/bear run two rounds; round two must answer the opponent. Hale’s ticket is derived from analyst scores **and** the research average, plus existing exposure — not a per-ticker canned script. Run the same name after a fill and the debate changes.
+- Blackboard pipeline. Each seat is a function that reads prior notes (stance, score, claims, `cited` ids) and appends its own. Analysts first. Bull/bear two rounds; round two must answer the opponent. Hale’s ticket is derived from analyst scores **and** the research average, plus existing exposure — not a per-ticker canned script. Run the same name after a fill and the debate changes.
 - Risk committee then judge. Aggressive / conservative / neutral vote a size. Sato takes the median and simulates the next book against hard limits: gross 80%, single-name 25%, sector 40%, short 15%, daily VaR $40k, drawdown 8% of peak NAV. Breach → trim in 0.5% steps, or veto if the name cannot fit. IV and beta can haircut size (trim) with a WARNING; they do not invent a veto.
 - Paper execution. Approve prices the ticket with slippage (`2bp + participation×4000 + IV×0.15`) and `1bp` fees. Cash moves at **fill px**, not the mark. Average cost uses the fill. Blotter stores the fill, slip, fee, and cash delta.
 
-**Mocked / stubbed:**
+**Stubbed:**
 
-- Quotes are sample closes as-of 18 Sep 2026 (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`), not a live vendor.
-- The news wire is a deterministic paper file (`src/lib/desk/news.ts`), not a news API. Filings/technicals are derived from the quote snapshot (PE, FCF, RSI, MACD, IV, volume).
+- Default quotes are sample closes as-of 18 Sep 2026 (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`). **Refresh marks** may overlay Yahoo last/change/volume; fundamentals and vol stay paper.
+- The news wire is a deterministic paper file (`src/lib/desk/news.ts`), not a news API.
 - Debate *wording* is rendered from structured claims when no LLM key is set. A live LLM may rewrite wording only.
-- Fills never hit an exchange. P&L is mark-to-book on the sample closes.
+- Fills never hit an exchange. P&L is mark-to-book on the marks on the tape.
 
 ## Desk
 
@@ -65,9 +102,7 @@ There is no broker, no order router, and no market-data vendor. Book and blotter
 | 04-J | P. Iyer · NEU | Neutral risk. Median the committee. |
 | 04-K | K. Sato · RSK | Hard limits. Veto, trim, last word. |
 
-Watch is a name picker in the masthead strip. Tape is the center column. The risk ticket on the right carries Sato’s checks, fill economics after Approve, the blotter, and the PM’s **Veto / Approve** stamp. On a narrow screen the three panes become Desk / Transcript / Ticket tabs. **View → Tabs** forces that layout on desktop.
-
-Seed book is long AAPL / MSFT / JPM. Typical mock outcomes on that seed (still computed — a different book can change them):
+Typical mock outcomes on the seed book (still computed — a different book or a Yahoo last can change them):
 
 - `NVDA` — BUY, often trimmed on IV, fillable.
 - `AAPL` — HOLD (already a large name).
@@ -82,28 +117,13 @@ Every control below must work with `npm run dev` and no `.env` keys.
 
 | Control | Where | Expected |
 | --- | --- | --- |
-| **NAME** chips (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`) | Strip under DESK | Selects the name. Mark in the masthead updates. Switching names clears the tape. |
-| **PACE → Stream** | Strip | Debate plays one mark at a time. First mark is on the tape as soon as you click **Run desk**. |
-| **PACE → Instant** | Strip | Next **Run desk** dumps the full tape at once. Mid-run, remaining marks flush. |
-| **VIEW → Floor** | Strip | Three panes on a wide screen (roster \| transcript \| ticket). |
-| **VIEW → Tabs** | Strip | **Desk / Transcript / Ticket** tabs. Each tab shows its pane. |
-| **Desk / Transcript / Ticket** tabs | Tabs view, or any narrow screen | Clicking a tab switches the pane. Ticket tab still has Veto/Approve. |
-| **Run desk** | Strip, right | Starts the mock debate for the selected name. No network. Click again to re-run. |
-| **Skip to mark** | Strip, appears while streaming | Jumps to the final mark and opens the ticket. |
-| **Reset book** | Strip | Restores the seed book (AAPL/MSFT/JPM) and seed blotter; clears the tape. |
-| **Agent row** (Fundamental … Risk Judge) | Left roster / Desk tab | Click filters the transcript to that seat (`FILTER`). Click again to clear. |
-| **Veto · Block trade** | Ticket, after Hale proposes | Status → **VETOED**. Book unchanged. Buttons disable. |
-| **Approve · Release to market** | Ticket, after Hale proposes | Status → **FILLED**. Working BUY/SELL hits the book at fill px (slip + fee). HOLD is mark-only. |
-
-Suggested click-through (zero keys):
-
-1. Confirm seed **Book** shows AAPL, MSFT, JPM.
-2. Leave NAME on `NVDA`, set **PACE → Instant**, click **Run desk**.
-3. Tape has eleven seats. Ticket is PENDING BUY. Sato may trim. Click **Approve**. Book gains NVDA at fill px, not the round mark. Blotter shows FILLED with slip/fee.
-4. Click **Reset book**. NVDA is gone.
-5. NAME `TSLA`, **Run desk**, **Veto**. Status VETOED. Book still seed only.
-6. Click **VIEW → Tabs**, then **Desk**, **Transcript**, **Ticket**. All three open.
-7. On Desk tab, click **Sentiment Analyst**. Transcript dims other seats.
+| **NAME** chips | Strip under DESK | Selects the name. Mark in the masthead updates. Switching names clears the tape. |
+| **PACE → Stream / Instant** | Strip | Stream plays one mark at a time. Instant dumps the full tape. |
+| **VIEW → Floor / Tabs** | Strip | Three panes, or Desk / Transcript / Ticket tabs. |
+| **Run desk** | Strip | Starts the mock debate. No network. Click again to re-run. |
+| **Refresh marks** | Strip | Optional Yahoo last. On failure, sample marks stay. Does not run the desk. |
+| **Reset book** | Strip | Seed book + sample marks + seed blotter; clears the tape. |
+| **Veto / Approve** | Ticket | Veto leaves the book. Approve fills at slip+fee. |
 
 ## Citations
 
@@ -112,4 +132,4 @@ Suggested click-through (zero keys):
 
 ## Stack
 
-Next.js App Router, TypeScript, Tailwind, shadcn/ui primitives. Cream paper `#F4F0E6`, ink, copper. Newsreader + IBM Plex Sans + IBM Plex Mono. No assemble-lockfile CI; `package-lock.json` is a normal `npm install` lockfile.
+Next.js App Router, TypeScript, Tailwind, shadcn/ui primitives. Cream paper `#F4F0E6`, ink, copper. Newsreader + IBM Plex Sans + IBM Plex Mono.

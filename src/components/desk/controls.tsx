@@ -19,6 +19,8 @@ export function ControlStrip({
   onRun,
   onSkip,
   onReset,
+  onRefreshMarks,
+  marksBusy,
 }: {
   quotes: Quote[];
   ticker: string;
@@ -32,6 +34,8 @@ export function ControlStrip({
   onRun: () => void;
   onSkip: () => void;
   onReset: () => void;
+  onRefreshMarks: () => void;
+  marksBusy: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink px-5 py-2 font-mono text-[11px]">
@@ -86,6 +90,15 @@ export function ControlStrip({
             Skip to mark
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={onRefreshMarks}
+          disabled={marksBusy}
+          data-qa="refresh-marks"
+          className="cursor-pointer border border-ink px-2 py-1 tracking-[0.14em] uppercase disabled:cursor-wait disabled:opacity-50"
+        >
+          {marksBusy ? "Marks\u2026" : "Refresh marks"}
+        </button>
         <button
           type="button"
           onClick={onReset}
