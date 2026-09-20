@@ -1,5 +1,5 @@
 import { normalizeBook, SEED_BOOK } from "./book";
-import { nvidiaBaseUrl, nvidiaModel } from "./flags";
+import { nvidiaBaseUrl, nvidiaModel, NVIDIA_TIMEOUT_MS } from "./flags";
 import { STARTING_NAV } from "./limits";
 import { runPipeline } from "./pipeline";
 import { UNIVERSE } from "./universe";
@@ -36,21 +36,72 @@ function extractBodies(text: string, expected: number): string[] {
   return parsed.bodies.map((b) => String(b));
 }
 
+function deltaContent(chunk: unknown): string {
+  if (!chunk || typeof chunk !== "object") return "";
+  const choices = (chunk as { choices?: Array<Record<string, unknown>> }).choices;
+  const first = choices?.[0];
+  if (!first) return "";
+  const delta = first.delta as { content?: unknown } | undefined;
+  if (typeof delta?.content === "string") return delta.content;
+  const message = first.message as { content?: unknown } | undefined;
+  if (typeof message?.content === "string") return message.content;
+  return "";
+}
+
+function parseSse(buffer: string): string {
+  let out = "";
+  for (const raw of buffer.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      out += deltaContent(JSON.parse(data));
+    } catch {
+      /* skip a torn JSON line */
+    }
+  }
+  return out;
+}
+
+async function readNvidiaBody(res: Response): Promise<string> {
+  if (!res.body) throw new Error("NVIDIA stream missing body");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let raw = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    raw += decoder.decode(value, { stream: true });
+  }
+  raw += decoder.decode();
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("data:") || trimmed.includes("\ndata:")) {
+    return parseSse(raw);
+  }
+  try {
+    return deltaContent(JSON.parse(trimmed));
+  } catch {
+    return trimmed;
+  }
+}
+
 async function callNvidia(prompt: string): Promise<string> {
   const key = process.env.NVIDIA_API_KEY?.trim();
   if (!key) throw new Error("NVIDIA_API_KEY missing");
   const res = await fetch(`${nvidiaBaseUrl()}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(NVIDIA_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${key}`,
-      Accept: "application/json",
+      Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: nvidiaModel(),
       temperature: 0.2,
       max_tokens: 2500,
-      stream: false,
+      stream: true,
       messages: [
         { role: "system", content: REWRITE_PROMPT },
         { role: "user", content: prompt },
@@ -58,10 +109,9 @@ async function callNvidia(prompt: string): Promise<string> {
     }),
   });
   if (!res.ok) throw new Error(`NVIDIA ${res.status}`);
-  const json = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return json.choices?.[0]?.message?.content ?? "";
+  const text = await readNvidiaBody(res);
+  if (!text.trim()) throw new Error("NVIDIA empty stream");
+  return text;
 }
 
 function packMessages(messages: DebateMessage[]): string {
