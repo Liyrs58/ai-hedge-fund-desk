@@ -1,6 +1,6 @@
 import type { NewsItem } from "./types";
 
-export const NEWS_WIRE: Record\u003cstring, NewsItem[]\u003e = {
+export const NEWS_WIRE: Record<string, NewsItem[]> = {
   NVDA: [
     {
       ticker: "NVDA",
@@ -119,5 +119,5 @@ export function newsFor(ticker: string): NewsItem[] {
 
 export function newsPolarity(items: NewsItem[]): number {
   if (items.length === 0) return 0;
-  return items.reduce((s, n) =\u003e s + n.polarity, 0) / items.length;
+  return items.reduce((s, n) => s + n.polarity, 0) / items.length;
 }
