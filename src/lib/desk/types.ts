@@ -82,6 +82,7 @@ export interface Ticket {
   vetoed: boolean;
   trimmed: boolean;
   status: TicketStatus;
+  ts: string;
 }
 
 export interface Position {
