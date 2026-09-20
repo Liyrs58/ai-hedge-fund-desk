@@ -1,6 +1,6 @@
 "use client";
 
-import { fmtPct, fmtPx, type Quote, type QuoteSource } from "@/lib/desk";
+import { fmtPct, fmtPx, type PaperBrokerId, type Quote, type QuoteSource } from "@/lib/desk";
 import { SessionClock } from "./session-clock";
 
 export type LlmBadge = "MOCK" | "NVIDIA/google/gemma-4-31b-it" | "FALLBACK MOCK";
@@ -9,10 +9,12 @@ export function DeskHeader({
   quote,
   quoteSource,
   llm,
+  paperBroker,
 }: {
   quote: Quote;
   quoteSource: QuoteSource;
   llm: LlmBadge;
+  paperBroker: PaperBrokerId;
 }) {
   const marks = quoteSource === "yahoo" ? "LIVE" : "SAMPLE";
   return (
@@ -34,6 +36,9 @@ export function DeskHeader({
           </Badge>
           <Badge qa="badge-trading" tone="sample">
             PAPER
+          </Badge>
+          <Badge qa="badge-broker" tone={paperBroker === "alpaca" ? "live" : "sample"}>
+            {paperBroker}
           </Badge>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { denyIfUnauthorized } from "@/lib/desk/demo-auth";
 import { readDeskStore, resetDeskStore, writeDeskStore } from "@/lib/desk/store";
 import { isLiveTrading } from "@/lib/desk/flags";
 import { normalizeBook } from "@/lib/desk";
@@ -6,11 +7,15 @@ import type { Book, Ticket } from "@/lib/desk";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return NextResponse.json(readDeskStore());
+export async function GET(request: Request) {
+  const denied = denyIfUnauthorized(request);
+  if (denied) return denied;
+  return NextResponse.json(await readDeskStore());
 }
 
 export async function PUT(request: Request) {
+  const denied = denyIfUnauthorized(request);
+  if (denied) return denied;
   if (isLiveTrading()) {
     return NextResponse.json(
       { error: "LIVE_TRADING is false. Paper desk only." },
@@ -24,7 +29,7 @@ export async function PUT(request: Request) {
       reset?: boolean;
     };
     if (body.reset) {
-      return NextResponse.json(resetDeskStore());
+      return NextResponse.json(await resetDeskStore());
     }
     if (!body.book || !Array.isArray(body.blotter)) {
       return NextResponse.json(
@@ -32,7 +37,7 @@ export async function PUT(request: Request) {
         { status: 400 },
       );
     }
-    const saved = writeDeskStore(normalizeBook(body.book), body.blotter);
+    const saved = await writeDeskStore(normalizeBook(body.book), body.blotter);
     return NextResponse.json(saved);
   } catch (error) {
     const message = error instanceof Error ? error.message : "store failed";

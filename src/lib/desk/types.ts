@@ -106,6 +106,8 @@ export interface Ticket {
   feeUsd?: number;
   cashDelta?: number;
   notional?: number;
+  broker?: "simulator" | "alpaca";
+  brokerOrderId?: string | null;
 }
 
 export interface Position {
@@ -160,7 +162,7 @@ export interface SessionPayload {
   quoteSource: QuoteSource;
   marksNote: string | null;
   liveTrading: false;
-  paperBroker: "off";
+  paperBroker: "off" | "alpaca" | "missing-keys";
   llmModel: string;
   book: Book;
   blotter: Ticket[];

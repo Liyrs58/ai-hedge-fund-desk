@@ -53,6 +53,7 @@ export { newsFor, NEWS_WIRE } from "./news";
 export { getSession } from "./session";
 export { runPaperPath } from "./paper-path";
 export type { PaperCheck } from "./paper-path";
+export type { PaperBrokerId } from "./flags";
 export {
   getQuote,
   overlayQuotes,
