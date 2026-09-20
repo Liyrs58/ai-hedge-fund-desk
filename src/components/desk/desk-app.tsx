@@ -21,6 +21,7 @@ import {
   padSession,
   priceTicket,
   SEED_BLOTTER,
+  SEED_BOOK,
   UNIVERSE,
   withPeak,
   type AgentId,
@@ -80,9 +81,9 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     () => Object.fromEntries(quotes.map((q) => [q.symbol, q])),
     [quotes],
   );
-  const seedBook = useMemo(
-    () => withPeak(attachSectors(cloneBook(session.book), UNIVERSE), UNIVERSE),
-    [session.book],
+  const factoryBook = useMemo(
+    () => withPeak(attachSectors(cloneBook(SEED_BOOK), UNIVERSE), UNIVERSE),
+    [],
   );
 
   const [ticker, setTicker] = useState(seedQuotes[0]?.symbol ?? "NVDA");
@@ -333,9 +334,9 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   }, [run, book, blotter]);
 
   const resetBook = useCallback(() => {
-    setBookRaw(seedBook);
+    setBookRaw(factoryBook);
     setBlotter(SEED_BLOTTER);
-    pushStore(seedBook, SEED_BLOTTER, true);
+    pushStore(factoryBook, SEED_BLOTTER, true);
     setQuotes(UNIVERSE);
     setQuoteSource("sample");
     setMarksNote(null);
@@ -343,7 +344,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     setCursor(0);
     setFocus(null);
     setError(null);
-  }, [seedBook]);
+  }, [factoryBook]);
 
   const refreshMarks = useCallback(async () => {
     setMarksBusy(true);
