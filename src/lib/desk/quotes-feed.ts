@@ -8,7 +8,8 @@ export interface QuoteTape {
   note: string | null;
 }
 
-const SAMPLE_NOTE = "Yahoo did not answer. Sample marks still on the tape.";
+const SAMPLE_NOTE =
+  "Yahoo did not answer. SAMPLE marks · SAMPLE fundamentals · SAMPLE technicals · WIRE news.";
 
 let lastTape: QuoteTape | null = null;
 
@@ -26,10 +27,14 @@ export async function loadQuoteTape(timeoutMs = 2800): Promise<QuoteTape> {
       lastTape = { source: "sample", quotes: UNIVERSE, note: SAMPLE_NOTE };
       return lastTape;
     }
+    const quotes = overlayQuotes(UNIVERSE, snaps);
+    const techSrc = quotes.some((q) => q.provenance.technicals.source === "computed")
+      ? "COMPUTED technicals"
+      : "SAMPLE technicals";
     lastTape = {
       source: "yahoo",
-      quotes: overlayQuotes(UNIVERSE, snaps),
-      note: `Yahoo last on ${snaps.map((s) => s.symbol).join(" ")}. PE / RSI / IV stay paper.`,
+      quotes,
+      note: `Yahoo last on ${snaps.map((s) => s.symbol).join(" ")}. MARK=YAHOO · FUNDAMENTALS=SAMPLE · TECHNICALS=${techSrc.split(" ")[0]} · NEWS=WIRE.`,
     };
     return lastTape;
   } catch {
