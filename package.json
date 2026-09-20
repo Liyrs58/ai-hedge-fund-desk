@@ -11,8 +11,8 @@
     "start": "next start --port 4317 --hostname 0.0.0.0",
     "lint": "eslint",
     "paper": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register.mjs scripts/paper-run.ts",
-    "ensure:pitch": "node scripts/ensure-investor-pitch.mjs",
-    "prebuild": "node scripts/ensure-investor-pitch.mjs"
+    "ensure:pitch": "node scripts/ensure-investor-pitch.cjs",
+    "prebuild": "node scripts/ensure-investor-pitch.cjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.3.3",
