@@ -7,13 +7,16 @@ export {
   fillTicket,
   limitBreaches,
   markBook,
+  normalizeBook,
   positionPnl,
   positionValue,
   SEED_BOOK,
   sharesForPct,
   ticketNotional,
+  withPeak,
 } from "./book";
-export { buildMockRun, getScript, listScriptTickers } from "./debates";
+export { buildMockRun, listScriptTickers, runPipeline } from "./pipeline";
+export { priceTicket, quoteFill, slippageBps } from "./execution";
 export {
   fmtPct,
   fmtPctPlain,
@@ -27,10 +30,19 @@ export {
   signedClass,
   tzLabel,
 } from "./format";
-export { AS_OF, RISK_LIMITS, SESSION_LABEL, STARTING_NAV } from "./limits";
+export {
+  AS_OF,
+  FEE_BPS,
+  MIN_TRADE_PCT,
+  RISK_LIMITS,
+  SESSION_LABEL,
+  STARTING_NAV,
+} from "./limits";
 export { detectProvider, runDesk } from "./provider";
 export { buildRiskChecks } from "./risk-checks";
-export type { CheckFlag, RiskCheck } from "./risk-checks";
+export type { RiskCheck } from "./risk-checks";
+export type { RiskVerdict } from "./risk-engine";
+export { newsFor, NEWS_WIRE } from "./news";
 export { getSession } from "./session";
 export { getQuote, QUOTE_BY_SYMBOL, UNIVERSE } from "./universe";
 export type * from "./types";

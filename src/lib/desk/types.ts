@@ -2,9 +2,15 @@ export type Side = "BUY" | "SELL" | "HOLD";
 
 export type AgentId =
   | "fundamental"
+  | "news"
   | "sentiment"
   | "technical"
+  | "bull"
+  | "bear"
   | "trader"
+  | "aggressive"
+  | "conservative"
+  | "neutral"
   | "risk";
 
 export type AgentStatus = "idle" | "reading" | "writing" | "done" | "veto";
@@ -25,6 +31,10 @@ export type TicketStatus =
   | "filled";
 
 export type ProviderId = "mock" | "openai" | "anthropic" | "gemini" | "grok";
+
+export type RiskDecision = "pass" | "trim" | "veto";
+
+export type CheckFlag = "OK" | "WARNING" | "FAIL";
 
 export interface Agent {
   id: AgentId;
@@ -64,6 +74,8 @@ export interface DebateMessage {
   body: string;
   delayMs: number;
   at: string;
+  replyTo?: string;
+  score?: number;
 }
 
 export interface Ticket {
@@ -83,6 +95,15 @@ export interface Ticket {
   trimmed: boolean;
   status: TicketStatus;
   ts: string;
+  sector?: string;
+  riskDecision?: RiskDecision;
+  riskRules?: string[];
+  fillPx?: number | null;
+  slippageBps?: number;
+  feeBps?: number;
+  feeUsd?: number;
+  cashDelta?: number;
+  notional?: number;
 }
 
 export interface Position {
@@ -95,10 +116,13 @@ export interface Position {
 export interface Book {
   cash: number;
   positions: Position[];
+  peakNav: number;
 }
 
 export interface Exposure {
   nav: number;
+  peakNav: number;
+  drawdownPct: number;
   grossPct: number;
   netPct: number;
   longPct: number;
@@ -108,12 +132,20 @@ export interface Exposure {
   dailyVar: number;
 }
 
+export interface RiskCheckView {
+  id: string;
+  label: string;
+  flag: CheckFlag;
+  detail: string;
+}
+
 export interface DeskRun {
   id: string;
   ticker: string;
   quote: Quote;
   messages: DebateMessage[];
   ticket: Ticket;
+  checks: RiskCheckView[];
   provider: ProviderId;
   fallbackFrom: ProviderId | null;
 }
@@ -134,4 +166,54 @@ export interface RiskLimits {
   sectorPct: number;
   shortPct: number;
   dailyVar: number;
+  maxDrawdownPct: number;
+}
+
+export interface AgentNote {
+  id: string;
+  agent: AgentId;
+  kind: MessageKind;
+  stance: "long" | "short" | "flat";
+  score: number;
+  claims: string[];
+  cited: string[];
+  replyTo?: string;
+  body: string;
+  round?: number;
+  sizePct?: number;
+  side?: Side;
+}
+
+export interface NewsItem {
+  ticker: string;
+  headline: string;
+  source: string;
+  hoursAgo: number;
+  polarity: number;
+}
+
+export interface TraderProposal {
+  side: Side;
+  sizePct: number;
+  shares: number;
+  stop: number | null;
+  reason: string;
+  conviction: number;
+  cited: string[];
+}
+
+export interface CommitteeVote {
+  agent: Extract<AgentId, "aggressive" | "conservative" | "neutral">;
+  side: Side;
+  sizePct: number;
+  reason: string;
+}
+
+export interface FillQuote {
+  fillPx: number;
+  slippageBps: number;
+  feeBps: number;
+  feeUsd: number;
+  notional: number;
+  cashDelta: number;
 }
