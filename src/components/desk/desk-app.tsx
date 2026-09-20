@@ -52,14 +52,17 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     session.quoteSource ?? "sample",
   );
   const [marksBusy, setMarksBusy] = useState(false);
-  const [marksNote, setMarksNote] = useState<string | null>(null);
+  const [marksNote, setMarksNote] = useState<string | null>(
+    session.marksNote ?? null,
+  );
+  const [runBusy, setRunBusy] = useState(false);
   const quoteMap = useMemo(
     () => Object.fromEntries(quotes.map((q) => [q.symbol, q])),
     [quotes],
   );
   const seedBook = useMemo(
-    () => withPeak(attachSectors(cloneBook(session.book), seedQuotes), seedQuotes),
-    [seedQuotes, session.book],
+    () => withPeak(attachSectors(cloneBook(session.book), UNIVERSE), UNIVERSE),
+    [session.book],
   );
 
   const [ticker, setTicker] = useState(seedQuotes[0]?.symbol ?? "NVDA");
@@ -90,7 +93,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   );
   const writing: AgentId | null =
     playing && run ? run.messages[cursor].agent : null;
-  const running = playing;
+  const running = playing || runBusy;
   const proposalVisible = messages.some((m) => m.kind === "proposal");
   const ticket = run && proposalVisible ? run.ticket : null;
   const clock = now ? padSession(now) : "--:--:--";
@@ -116,14 +119,24 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   }, [run, cursor, pace]);
 
   const startRun = useCallback(() => {
-    try {
-      setError(null);
-      setFocus(null);
-      const q = quoteMap[ticker] ?? quotes[0];
-      if (!q) {
-        setError("No mark on the tape for that name.");
-        return;
-      }
+    const q = quoteMap[ticker] ?? quotes[0];
+    if (!q) {
+      setError("No mark on the tape for that name.");
+      return;
+    }
+    setError(null);
+    setFocus(null);
+
+    const applyRun = (next: DeskRun) => {
+      setRun(next);
+      setCursor(
+        pace === "instant"
+          ? next.messages.length
+          : Math.min(1, next.messages.length),
+      );
+    };
+
+    const localMock = (fallbackFrom: DeskRun["fallbackFrom"] = null): DeskRun => {
       const built = buildMockRun(
         ticker,
         q,
@@ -131,7 +144,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         quotes,
         new Date().toISOString(),
       );
-      const next: DeskRun = {
+      return {
         id: `run-${q.symbol}-${Date.now()}`,
         ticker: q.symbol,
         quote: q,
@@ -139,22 +152,49 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         ticket: built.ticket,
         checks: built.checks,
         provider: "mock",
-        fallbackFrom: null,
+        fallbackFrom,
       };
-      setRun(next);
-      setCursor(
-        pace === "instant"
-          ? next.messages.length
-          : Math.min(1, next.messages.length),
-      );
-    } catch (err) {
-      setRun(null);
-      setCursor(0);
-      setError(
-        err instanceof Error ? err.message : "Desk failed to open the tape.",
-      );
+    };
+
+    if (session.provider !== "nvidia") {
+      try {
+        applyRun(localMock(null));
+      } catch (err) {
+        setRun(null);
+        setCursor(0);
+        setError(
+          err instanceof Error ? err.message : "Desk failed to open the tape.",
+        );
+      }
+      return;
     }
-  }, [ticker, book, quotes, quoteMap, pace]);
+
+    setRunBusy(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/desk/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ ticker: q.symbol, book, quotes }),
+        });
+        const data = (await res.json()) as DeskRun & { error?: string };
+        if (!res.ok || !data?.messages || !data.ticket) {
+          applyRun(localMock("nvidia"));
+          return;
+        }
+        applyRun({
+          ...data,
+          ticker: q.symbol,
+          quote: q,
+        });
+      } catch {
+        applyRun(localMock("nvidia"));
+      } finally {
+        setRunBusy(false);
+      }
+    })();
+  }, [ticker, book, quotes, quoteMap, pace, session.provider]);
 
   const skipToMark = useCallback(() => {
     if (!run) return;
@@ -162,6 +202,10 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   }, [run]);
 
   const onApprove = useCallback(() => {
+    if (session.liveTrading) {
+      setError("Live trading is disabled. Paper desk only.");
+      return;
+    }
     if (!run?.ticket || run.ticket.status !== "proposed") return;
     const priced = priceTicket(
       { ...run.ticket, status: "filled" },
@@ -181,7 +225,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     setRun({ ...run, ticket: priced });
     setBlotter((prev) => [priced, ...prev].slice(0, 24));
     setCursor(run.messages.length);
-  }, [run, quotes, quote, quoteMap, setBook, setBlotter]);
+  }, [run, quotes, quote, quoteMap, setBook, setBlotter, session.liveTrading]);
 
   const onVeto = useCallback(() => {
     if (!run?.ticket || run.ticket.status !== "proposed") return;
@@ -194,14 +238,14 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   const resetBook = useCallback(() => {
     setBook(seedBook);
     setBlotter(session.blotter);
-    setQuotes(seedQuotes);
+    setQuotes(UNIVERSE);
     setQuoteSource("sample");
     setMarksNote(null);
     setRun(null);
     setCursor(0);
     setFocus(null);
     setError(null);
-  }, [seedBook, seedQuotes, session.blotter, setBook, setBlotter]);
+  }, [seedBook, session.blotter, setBook, setBlotter]);
 
   const refreshMarks = useCallback(async () => {
     setMarksBusy(true);
@@ -322,13 +366,15 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   );
 
   const showTabs = view === "tabs" || !isLg;
-  const llmLabel = run?.fallbackFrom
-    ? `FALLBACK MOCK`
-    : (run?.provider ?? session.provider).toUpperCase();
+  const llmLabel: "MOCK" | "NVIDIA" | "FALLBACK MOCK" = run?.fallbackFrom
+    ? "FALLBACK MOCK"
+    : (run?.provider ?? session.provider) === "nvidia"
+      ? "NVIDIA"
+      : "MOCK";
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-paper">
-      <DeskHeader quote={quote} />
+      <DeskHeader quote={quote} quoteSource={quoteSource} llm={llmLabel} />
       <ControlStrip
         quotes={quotes}
         ticker={ticker}
@@ -368,10 +414,11 @@ export function DeskApp({ session }: { session: SessionPayload }) {
           <span className="text-copper">LIVE</span>
         </span>
         <span>
-          DATA: {quoteSource === "yahoo" ? "YAHOO+PAPER" : "PAPER"}
+          MARKS: {quoteSource === "yahoo" ? "LIVE" : "SAMPLE"}
           {marksNote ? <span className="ml-2 text-mute">{marksNote}</span> : null}
         </span>
         <span>LLM: {llmLabel}</span>
+        <span>TRADE: PAPER</span>
         <span>MARKET: {marketLabel(now)}</span>
         <span>LATENCY: 6ms</span>
         <span>FEED: PRIMARY</span>
