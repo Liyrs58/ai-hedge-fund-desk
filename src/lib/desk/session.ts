@@ -11,6 +11,7 @@ export function getSession(): SessionPayload {
     sessionLabel: SESSION_LABEL,
     provider: detectProvider(),
     quotes: UNIVERSE,
+    quoteSource: "sample",
     book: attachSectors(SEED_BOOK, UNIVERSE),
     blotter: SEED_BLOTTER,
     limits: RISK_LIMITS,

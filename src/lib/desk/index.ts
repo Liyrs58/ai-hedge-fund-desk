@@ -44,5 +44,13 @@ export type { RiskCheck } from "./risk-checks";
 export type { RiskVerdict } from "./risk-engine";
 export { newsFor, NEWS_WIRE } from "./news";
 export { getSession } from "./session";
-export { getQuote, QUOTE_BY_SYMBOL, UNIVERSE } from "./universe";
+export { runPaperPath } from "./paper-path";
+export type { PaperCheck } from "./paper-path";
+export {
+  getQuote,
+  overlayQuotes,
+  quoteBySymbol,
+  QUOTE_BY_SYMBOL,
+  UNIVERSE,
+} from "./universe";
 export type * from "./types";
