@@ -2,8 +2,8 @@ import { lastNote, n1, n2, post, signedPct, type Blackboard } from "./blackboard
 import { stanceOf } from "../signals";
 import type { AgentNote } from "../types";
 
-function cite(...notes: Array\u003cAgentNote | undefined\u003e): string[] {
-  return notes.filter((n): n is AgentNote =\u003e !!n).map((n) =\u003e n.id);
+function cite(...notes: Array<AgentNote | undefined>): string[] {
+  return notes.filter((n): n is AgentNote => !!n).map((n) => n.id);
 }
 
 export function runFundamental(board: Blackboard): AgentNote {
@@ -14,16 +14,16 @@ export function runFundamental(board: Blackboard): AgentNote {
     f.existingShares
       ? `Book already has ${f.existingShares} ${f.ticker} (${n1(f.existingPct)}% NAV).`
       : `Flat in the book.`,
-    score \u003e 0.6
+    score > 0.6
       ? "Quality is not a fade on multiple alone."
-      : score \u003c -0.6
+      : score < -0.6
         ? "Multiple does not belong on this print."
         : "Last print is not a new idea.",
   ];
   const lead =
-    score \u003e 0.5
+    score > 0.5
       ? `${board.quote.name.split(" ")[0]} still compounds on paper.`
-      : score \u003c -0.5
+      : score < -0.5
         ? `${f.ticker} is a multiple complaint until the print changes.`
         : `${f.ticker} is known. I do not see a new fundamental.`;
   return post(board, {
@@ -43,7 +43,7 @@ export function runNews(board: Blackboard): AgentNote {
   const citedFnd = lastNote(board, "fundamental");
   const claims = items.length
     ? items.map(
-        (n) =\u003e
+        (n) =>
           `${n.source} ${n.hoursAgo}h: ${n.headline} (pol ${n.polarity.toFixed(2)}).`,
       )
     : ["No items on the wire."];
@@ -76,25 +76,25 @@ export function runSentiment(board: Blackboard): AgentNote {
   const claims = [
     `Session ${signedPct(f.changePct)}; volume ${n2(f.volRatio)}\u00d7 20d ADV.`,
     `IV30 ${n1(f.iv30)}; beta ${n2(f.beta)}.`,
-    score \u003e 0.3
+    score > 0.3
       ? "Flow is constructive, not crowded-long fuel."
-      : score \u003c -0.3
+      : score < -0.3
         ? "This is a volatility event, not a directional gift."
         : "Quiet tape. No squeeze, no dump.",
   ];
+  const lead =
+    score > 0.3
+      ? "Tape is tired, not broken."
+      : score < -0.3
+        ? "Polarity is the worst in the book."
+        : "News cycle is not a catalyst.";
   if (news) {
     claims.push(
       `Walsh wire ${n2(news.score)}. I ${
-        Math.abs(news.score - score) \u003c 0.5 ? "agree on polarity" : "do not take the wire as flow"
+        Math.abs(news.score - score) < 0.5 ? "agree on polarity" : "do not take the wire as flow"
       }.`,
     );
   }
-  const lead =
-    score \u003e 0.3
-      ? "Tape is tired, not broken."
-      : score \u003c -0.3
-        ? "Polarity is the worst in the book."
-        : "News cycle is not a catalyst.";
   return post(board, {
     agent: "sentiment",
     kind: "note",
@@ -114,13 +114,13 @@ export function runTechnical(board: Blackboard): AgentNote {
   const claims = [
     `Mark ${n2(f.mark)}. 50d ${n2(f.sma50)}, 200d ${n2(f.sma200)} (${signedPct(f.dist50Pct)} vs 50d).`,
     `RSI(14) ${n1(f.rsi14)}; MACD hist ${n2(f.macdHist)}.`,
-    score \u003e 0.4
+    score > 0.4
       ? "Above both averages. I underwrite a grind, not a breakout."
-      : score \u003c -0.4
+      : score < -0.4
         ? "Lost the averages. I will not chase a naked dump."
         : "Range midpoint. I have no setup.",
   ];
-  if (fnd \u0026\u0026 fnd.stance === "long" \u0026\u0026 score \u003c 0) {
+  if (fnd && fnd.stance === "long" && score < 0) {
     claims.push("Chen can like the name. I will not bid this tape.");
   }
   return post(board, {

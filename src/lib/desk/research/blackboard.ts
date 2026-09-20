@@ -18,6 +18,9 @@ export interface Blackboard {
   quote: Quote;
   book: Book;
   quotes: Quote[];
+  exposure: Exposure;
+  features: Features;
+  scores: Scores;
   news: NewsItem[];
   notes: AgentNote[];
   proposal: TraderProposal | null;
@@ -25,25 +28,22 @@ export interface Blackboard {
   verdict: RiskVerdict | null;
   ticket: Ticket | null;
   seq: number;
-  exposure: Exposure;
-  features: Features;
-  scores: Scores;
 }
 
 export function lastNote(board: Blackboard, agent: AgentId): AgentNote | undefined {
-  for (let i = board.notes.length - 1; i \u003e= 0; i--) {
+  for (let i = board.notes.length - 1; i >= 0; i--) {
     if (board.notes[i].agent === agent) return board.notes[i];
   }
   return undefined;
 }
 
 export function notesOf(board: Blackboard, agent: AgentId): AgentNote[] {
-  return board.notes.filter((n) =\u003e n.agent === agent);
+  return board.notes.filter((n) => n.agent === agent);
 }
 
 export function post(
   board: Blackboard,
-  partial: Omit\u003cAgentNote, "id"\u003e \u0026 { id?: string },
+  partial: Omit<AgentNote, "id"> & { id?: string },
 ): AgentNote {
   board.seq += 1;
   const note: AgentNote = {
@@ -64,7 +64,7 @@ export function n2(n: number): string {
 }
 
 export function signedPct(n: number): string {
-  const sign = n \u003e 0 ? "+" : "";
+  const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
 }
 
