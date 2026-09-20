@@ -3,7 +3,12 @@ import { priceTicket } from "./execution";
 import { buildMockRun } from "./pipeline";
 import { detectProvider } from "./provider";
 import { isLiveTrading } from "./trading-mode";
-import { nvidiaBaseUrl, nvidiaModel, paperBroker } from "./flags";
+import {
+  nvidiaBaseUrl,
+  nvidiaModel,
+  paperBroker,
+  NVIDIA_TIMEOUT_MS,
+} from "./flags";
 import { UNIVERSE } from "./universe";
 
 export interface PaperCheck {
@@ -67,6 +72,11 @@ export function runPaperPath(): PaperCheck {
     failures,
     nvidiaBaseUrl() === "https://integrate.api.nvidia.com/v1",
     "NVIDIA base URL must be https://integrate.api.nvidia.com/v1.",
+  );
+  expect(
+    failures,
+    NVIDIA_TIMEOUT_MS >= 180_000,
+    "NVIDIA client timeout must be >= 180s.",
   );
   expect(failures, paperBroker() === "off", "PAPER_BROKER must stay off.");
   if (!process.env.NVIDIA_API_KEY?.trim()) {
