@@ -1,7 +1,10 @@
 import { roundPx } from "./signals";
 import type { MarkSnap } from "./universe";
 
-export type YahooSnap = MarkSnap;
+export type YahooSnap = MarkSnap & {
+  closes: number[];
+  asOf: string;
+};
 
 interface ChartPayload {
   chart?: {
@@ -11,12 +14,10 @@ interface ChartPayload {
         chartPreviousClose?: number;
         previousClose?: number;
         regularMarketVolume?: number;
+        regularMarketTime?: number;
       };
       indicators?: {
-        quote?: Array<{
-          close?: Array<number | null | undefined>;
-          volume?: Array<number | null | undefined>;
-        }>;
+        quote?: Array<{ close?: Array<number | null | undefined> }>;
       };
     }>;
   };
@@ -33,7 +34,7 @@ export async function fetchYahooSnap(
   symbol: string,
   signal: AbortSignal,
 ): Promise<YahooSnap | null> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo&includePrePost=false`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
   const res = await fetch(url, {
     signal,
     headers: {
@@ -56,8 +57,13 @@ export async function fetchYahooSnap(
       ? (meta.regularMarketVolume as number) / 1_000_000
       : 0;
   const closes = (result?.indicators?.quote?.[0]?.close ?? []).filter(
-    (n): n is number => typeof n === "number" && Number.isFinite(n),
+    (n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0,
   );
+  const ts = meta.regularMarketTime;
+  const asOf =
+    typeof ts === "number" && ts > 0
+      ? new Date(ts * 1000).toISOString()
+      : new Date().toISOString();
   return {
     symbol: symbol.toUpperCase(),
     mark: roundPx(mark),
@@ -65,6 +71,8 @@ export async function fetchYahooSnap(
     changePct: roundPx(changePct),
     volumeM: roundPx(volumeM),
     spark: sparkFromCloses(closes, mark),
+    closes,
+    asOf,
   };
 }
 
