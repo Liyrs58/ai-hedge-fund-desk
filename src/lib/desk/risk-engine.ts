@@ -65,7 +65,7 @@ function breaches(exp: Exposure, ticker: string, sector: string): string[] {
   const out: string[] = [];
   if (exp.grossPct > RISK_LIMITS.grossPct) out.push("GROSS");
   if (exp.shortPct > RISK_LIMITS.shortPct) out.push("SHORT");
-  if (exp.dailyVar > RISK_LIMITS.dailyVar) out.push("VAR");
+  if (exp.dailyRiskProxy > RISK_LIMITS.dailyRiskProxy) out.push("RISK_PROXY");
   if (exp.drawdownPct > RISK_LIMITS.maxDrawdownPct) out.push("DRAWDOWN");
   if (Math.abs(exp.namePct[ticker] ?? 0) > RISK_LIMITS.singleNamePct) {
     out.push("NAME");
@@ -93,7 +93,7 @@ export function evaluateTicket(
   current: Exposure,
 ): RiskVerdict {
   const rules: RiskRule[] = [];
-  let side = proposed.side;
+  const side = proposed.side;
   let sizePct = proposed.sizePct;
   let decision: RiskDecision = "pass";
 
@@ -118,10 +118,10 @@ export function evaluateTicket(
         `${quote.sector} ${current.sectorPct[quote.sector]?.toFixed(1) ?? "0.0"}%.`,
       ),
       flagRule(
-        "VAR",
-        "Portfolio VaR",
-        current.dailyVar > RISK_LIMITS.dailyVar * 0.55 ? "WARNING" : "OK",
-        `VaR ${Math.round(current.dailyVar)} / ${RISK_LIMITS.dailyVar}.`,
+        "RISK_PROXY",
+        "Vol-weighted risk",
+        current.dailyRiskProxy > RISK_LIMITS.dailyRiskProxy * 0.55 ? "WARNING" : "OK",
+        `RiskProxy ${Math.round(current.dailyRiskProxy)} / ${RISK_LIMITS.dailyRiskProxy}.`,
       ),
       flagRule(
         "DRAWDOWN",
@@ -223,8 +223,8 @@ export function evaluateTicket(
         failId,
         failId === "NAME"
           ? "Position limit"
-          : failId === "VAR"
-            ? "Portfolio VaR"
+          : failId === "RISK_PROXY"
+            ? "Vol-weighted risk"
             : failId === "DRAWDOWN"
               ? "Drawdown"
               : "Position limit",
@@ -278,10 +278,10 @@ export function evaluateTicket(
       `${quote.sector} ${nextSector.toFixed(1)}% \u00b7 beta ${quote.beta.toFixed(2)}.`,
     ),
     flagRule(
-      "VAR",
-      "Portfolio VaR",
-      next.dailyVar > RISK_LIMITS.dailyVar * 0.55 ? "WARNING" : "OK",
-      `VaR ${Math.round(next.dailyVar)} / ${RISK_LIMITS.dailyVar}.`,
+      "RISK_PROXY",
+      "Vol-weighted risk",
+      next.dailyRiskProxy > RISK_LIMITS.dailyRiskProxy * 0.55 ? "WARNING" : "OK",
+      `RiskProxy ${Math.round(next.dailyRiskProxy)} / ${RISK_LIMITS.dailyRiskProxy}.`,
     ),
     flagRule(
       "DRAWDOWN",
@@ -305,7 +305,7 @@ export function evaluateTicket(
   }
 
   const display = unique.filter((r) =>
-    ["Position limit", "Liquidity (ADV)", "Factor exposure", "Portfolio VaR", "Drawdown"].includes(
+    ["Position limit", "Liquidity (ADV)", "Factor exposure", "Vol-weighted risk", "Drawdown"].includes(
       r.label,
     ),
   );
@@ -313,7 +313,7 @@ export function evaluateTicket(
   const trimmed = decision === "trim" || sizePct < proposed.sizePct - 0.01;
   const note = trimmed
     ? `Trim ${proposed.sizePct.toFixed(1)}% \u2192 ${sizePct.toFixed(1)}%. ${quote.symbol} ${nextName.toFixed(1)}%, ${quote.sector} ${nextSector.toFixed(1)}%. Inside hard limits. ${quote.iv30 > 36 ? `IV ${quote.iv30.toFixed(1)}.` : ""} Approved.`
-    : `Approved ${sizePct.toFixed(1)}%. ${quote.symbol} ${nextName.toFixed(1)}%, ${quote.sector} ${nextSector.toFixed(1)}%. VaR ${Math.round(next.dailyVar)}. Stop in the book.`;
+    : `Approved ${sizePct.toFixed(1)}%. ${quote.symbol} ${nextName.toFixed(1)}%, ${quote.sector} ${nextSector.toFixed(1)}%. RiskProxy ${Math.round(next.dailyRiskProxy)}. Stop in the book.`;
 
   return {
     decision: trimmed ? "trim" : "pass",
