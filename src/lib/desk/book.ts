@@ -47,6 +47,7 @@ export function markBook(
   const namePct: Record<string, number> = {};
   let long = 0;
   let short = 0;
+  /** Vol-weighted exposure proxy: Σ |value| × (iv30/100) × 0.06 — not VaR. */
   let absVar = 0;
 
   for (const pos of book.positions) {
@@ -83,7 +84,7 @@ export function markBook(
     shortPct: toPct(short),
     sectorPct: sectorPctOut,
     namePct: namePctOut,
-    dailyVar: absVar,
+    dailyRiskProxy: absVar,
   };
 }
 
@@ -172,8 +173,8 @@ export function limitBreaches(exposure: Exposure): string[] {
   if (exposure.shortPct > RISK_LIMITS.shortPct) {
     out.push(`Short ${exposure.shortPct.toFixed(1)}% > ${RISK_LIMITS.shortPct}%`);
   }
-  if (exposure.dailyVar > RISK_LIMITS.dailyVar) {
-    out.push(`VaR ${Math.round(exposure.dailyVar)} > ${RISK_LIMITS.dailyVar}`);
+  if (exposure.dailyRiskProxy > RISK_LIMITS.dailyRiskProxy) {
+    out.push(`RiskProxy ${Math.round(exposure.dailyRiskProxy)} > ${RISK_LIMITS.dailyRiskProxy}`);
   }
   if (exposure.drawdownPct > RISK_LIMITS.maxDrawdownPct) {
     out.push(
