@@ -1,12 +1,16 @@
 {
-  "name": "ai-hedge-fund",
+  "name": "ai-hedge-fund-desk",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev --port 4317 --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --port 4317 --hostname 0.0.0.0",
-    "lint": "eslint"
+    "lint": "eslint",
+    "paper": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register.mjs scripts/paper-run.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
