@@ -2,7 +2,7 @@
 
 Eleven-seat **paper** trading desk. Analysts mark a name on a shared blackboard, bull and bear argue, a trader proposes, a three-seat risk committee votes, and a judge applies hard book limits. You still stamp **Approve** or **Veto**. Nothing here is live capital. Nothing here is advice.
 
-**Best use case:** a TradingAgents teaching tool and multi-agent paper-trading research desk — walk a debate → ticket → risk veto/trim → paper fill without brokers, vendors, or API keys.
+**Best use case:** a TradingAgents teaching tool and multi-agent paper-trading **research-real** desk — walk a debate → ticket → risk veto/trim → paper fill. Yahoo last prices when the network answers; a JSON book that survives reload; mock LLM with zero keys, or NVIDIA NIM `google/gemma-4-31b-it` when `NVIDIA_API_KEY` is set.
 
 It follows [TradingAgents](https://github.com/TauricResearch/TradingAgents) (Xiao, Su, Deng, et al., arXiv [2412.20138](https://arxiv.org/abs/2412.20138)): fundamental / news / sentiment / technical, two-round bull/bear, trader, aggressive / conservative / neutral risk, then a judge. This repo is a TypeScript paper desk of that conversation, not a port of the Python research stack.
 
@@ -15,7 +15,12 @@ npm run dev
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
-No `.env` file is required. The click-through is **client-side paper**: mock LLM, sample marks if Yahoo is blocked, book/blotter in `localStorage`. Run a name, veto, or approve without a network call. `LIVE_TRADING` is always **false** — there is no broker path.
+No `.env` file is required. Copy `.env.example` to `.env.local` only if you want NVIDIA prose.
+
+- LLM badge **MOCK** without `NVIDIA_API_KEY`.
+- Marks: Yahoo last on load and **Refresh marks**; **SAMPLE** if Yahoo is blocked.
+- Book/blotter: JSON file `data/desk-store.json` (write-through `localStorage` cache). On serverless hosts that cannot write `data/`, the store falls back to `/tmp/ahf-desk-store.json` (ephemeral).
+- `LIVE_TRADING` is always **false**. `PAPER_BROKER` is always **off**. There is no broker path.
 
 ```bash
 npm run build    # production compile — must pass
@@ -26,7 +31,8 @@ Suggested path on the seed book (AAPL / MSFT / JPM long):
 
 1. NAME `NVDA`, **PACE → Instant**, **Run desk**.
 2. Eleven seats on the tape. Ticket is a BUY (Sato may trim). **Approve**. Book gains NVDA at fill px (slip + 1bp fee), not the round mark.
-3. **Reset book**. NAME `TSLA`, **Run desk**, **Veto**. Status VETOED. Book still seed only.
+3. Reload: the fill is still on the book (JSON store).
+4. **Reset book**. NAME `TSLA`, **Run desk**, **Veto**. Status VETOED. Book still seed only.
 
 ## Deploy on Vercel
 
@@ -34,7 +40,7 @@ The app is a standard Next.js App Router project. **No environment variables are
 
 1. Fork or push this repo to GitHub.
 2. [Import the project](https://vercel.com/new) on Vercel. Framework preset: **Next.js**.
-3. Leave env empty. Deploy.
+3. Leave env empty, or set only `NVIDIA_API_KEY`. Deploy.
 
 CLI equivalent from a clone:
 
@@ -44,32 +50,51 @@ npx vercel
 
 Production build command is `npm run build`. `package-lock.json` is a normal `npm install` lockfile. There is **no** GitHub Action that assembles or patches the lockfile.
 
-The only optional env is **`NVIDIA_API_KEY`** (free NVIDIA NIM). Do not set OpenAI or Anthropic keys — this desk does not call paid LLM APIs.
+On Vercel the JSON book lives under `/tmp` (not durable across instances). Local `npm run dev` writes `data/desk-store.json`.
 
 ## Marks: LIVE vs SAMPLE
 
-On load, and on **Refresh marks**, the desk asks Yahoo Finance (no key) for last / change / volume / spark on the six names.
+On load, and on **Refresh marks**, the desk asks Yahoo Finance (no key) for last / change / volume / spark on the six names (`query1.finance.yahoo.com/v8/finance/chart`).
 
 - Success: masthead badge **LIVE**. Next **Run desk** uses those last prices. PE, RSI, MACD, IV, beta stay paper.
 - Failure (blocked network, timeout, empty payload): badge **SAMPLE**. Sample closes stay on the tape. Offline **Run desk** still works.
 - **Reset book** restores the seed book, sample marks, and the SAMPLE badge.
 
-## Optional: NVIDIA NIM (free)
+## LLM lock: NVIDIA NIM
 
-Copy `.env.example` to `.env.local` only if you want live prose. Get a key at [build.nvidia.com/settings](https://build.nvidia.com/settings). Hosted NIM is OpenAI-compatible at `https://integrate.api.nvidia.com/v1` ([LLM APIs](https://docs.api.nvidia.com/nim/reference/llm-apis)).
+Debate *wording* is the only thing a model may rewrite. Ticket size, risk verdict, and fills are always computed in-process.
+
+Hosted NIM is OpenAI-compatible at `https://integrate.api.nvidia.com/v1` ([LLM APIs](https://docs.api.nvidia.com/nim/reference/llm-apis)). Get a key at [build.nvidia.com/settings](https://build.nvidia.com/settings).
 
 | Env | Required? | What it does |
 | --- | --- | --- |
 | *(none)* | Default | Deterministic mock pipeline. Badge **MOCK**. Desk runs offline. |
-| `NVIDIA_API_KEY` | Optional | Rewrite debate *wording* via NIM. Badge **NVIDIA**. |
-| `NVIDIA_MODEL` | Optional | Default `meta/llama-3.1-8b-instruct` (listed on NVIDIA's LLM catalog). |
-| `NVIDIA_BASE_URL` | Optional | Default `https://integrate.api.nvidia.com/v1`. |
+| `NVIDIA_API_KEY` | Optional | Rewrite debate wording via NIM. Badge **NVIDIA/google/gemma-4-31b-it**. |
+| `NVIDIA_MODEL` | Locked | Always `google/gemma-4-31b-it`. Env is ignored. |
+| `NVIDIA_BASE_URL` | Locked | Always `https://integrate.api.nvidia.com/v1`. Env is ignored. |
 | `LLM_PROVIDER=mock` | Optional | Force mock even if `NVIDIA_API_KEY` is set. |
 | `LIVE_TRADING=false` | Always | Paper fills only. Setting this to true does nothing. |
+| `PAPER_BROKER=off` | Always | No Alpaca (or any) broker. Stub throws if called. |
+| `DESK_STORE_PATH` | Optional | Override JSON store path. |
 
-A NIM call that fails falls back to mock prose; the badge reads **FALLBACK MOCK**. Ticket size, risk verdict, and fills are never taken from the model. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are ignored.
+A NIM call that fails falls back to mock prose; the badge reads **FALLBACK MOCK**. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are ignored — this desk does not call OpenAI or Anthropic.
 
-There is no broker, no order router, and no paid market-data vendor. Book and blotter persist in `localStorage`.
+## Health
+
+`GET /api/health` reports live-trading (always false), paper broker (always off), LLM badge, quote source, and store backend:
+
+```json
+{
+  "ok": true,
+  "liveTrading": false,
+  "paperBroker": "off",
+  "llm": { "provider": "mock", "model": "google/gemma-4-31b-it", "badge": "MOCK" },
+  "quotes": { "source": "yahoo", "badge": "LIVE" },
+  "store": { "backend": "json-file", "durable": true }
+}
+```
+
+The footer **HEALTH** line mirrors that payload.
 
 ## What is real vs stubbed
 
@@ -78,13 +103,15 @@ There is no broker, no order router, and no paid market-data vendor. Book and bl
 - Blackboard pipeline. Each seat is a function that reads prior notes (stance, score, claims, `cited` ids) and appends its own. Analysts first. Bull/bear two rounds; round two must answer the opponent. Hale’s ticket is derived from analyst scores **and** the research average, plus existing exposure — not a per-ticker canned script. Run the same name after a fill and the debate changes.
 - Risk committee then judge. Aggressive / conservative / neutral vote a size. Sato takes the median and simulates the next book against hard limits: gross 80%, single-name 25%, sector 40%, short 15%, daily VaR $40k, drawdown 8% of peak NAV. Breach → trim in 0.5% steps, or veto if the name cannot fit. IV and beta can haircut size (trim) with a WARNING; they do not invent a veto.
 - Paper execution. Approve prices the ticket with slippage (`2bp + participation×4000 + IV×0.15`) and `1bp` fees. Cash moves at **fill px**, not the mark. Average cost uses the fill. Blotter stores the fill, slip, fee, and cash delta.
+- Yahoo last (when reachable). JSON book persist on a writable disk.
 
 **Stubbed:**
 
 - Quotes default to sample closes as-of 18 Sep 2026 (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`) when Yahoo does not answer. LIVE overlay is last/change/volume/spark only; fundamentals and vol stay paper.
 - The news wire is a deterministic paper file (`src/lib/desk/news.ts`), not a news API.
-- Debate *wording* is rendered from structured claims when `NVIDIA_API_KEY` is unset (MOCK). NIM may rewrite wording only.
-- Fills never hit an exchange (`LIVE_TRADING=false`). P&L is mark-to-book on the marks on the tape.
+- Debate *wording* is rendered from structured claims when `NVIDIA_API_KEY` is unset (MOCK). NIM may rewrite wording only, model locked to `google/gemma-4-31b-it`.
+- Fills never hit an exchange (`LIVE_TRADING=false`). `PAPER_BROKER=off`. P&L is mark-to-book on the marks on the tape.
+- On Vercel / serverless, `data/` is not writable; the store uses `/tmp` and does not survive cold starts.
 
 ## Desk
 
@@ -120,12 +147,13 @@ Every control below must work with `npm run dev` and no `.env` keys.
 | **NAME** chips | Strip under DESK | Selects the name. Mark in the masthead updates. Switching names clears the tape. |
 | **PACE → Stream / Instant** | Strip | Stream plays one mark at a time. Instant dumps the full tape. |
 | **VIEW → Floor / Tabs** | Strip | Three panes, or Desk / Transcript / Ticket tabs. |
-| **Run desk** | Strip | Starts the mock debate with no key (no network). With `NVIDIA_API_KEY`, wording may come from NIM. |
+| **Run desk** | Strip | Starts the mock debate with no key (no network). With `NVIDIA_API_KEY`, wording may come from NIM `google/gemma-4-31b-it`. |
 | **Refresh marks** | Strip | Yahoo last. On failure, SAMPLE marks stay. Does not run the desk. |
-| **Reset book** | Strip | Seed book + SAMPLE marks + seed blotter; persists to `localStorage`. |
+| **Reset book** | Strip | Seed book + SAMPLE marks + seed blotter; persists to the JSON store. |
 | **Veto / Approve** | Ticket | Veto leaves the book. Approve paper-fills at slip+fee. Never live. |
 | **LIVE / SAMPLE** | Masthead | LIVE after Yahoo last. SAMPLE on fallback or after Reset book. |
-| **MOCK / NVIDIA** | Masthead | MOCK with no key. NVIDIA when NIM rewrote wording. |
+| **MOCK / NVIDIA/google/gemma-4-31b-it** | Masthead | MOCK with no key. NVIDIA/google/gemma-4-31b-it when NIM rewrote wording. |
+| **HEALTH** | Footer | `/api/health` line: MARKS, LLM, STORE FILE or TMP, BROKER off, LIVE false. |
 
 ## Citations
 
