@@ -5,6 +5,8 @@
 export const LIVE_TRADING = false;
 export const NVIDIA_MODEL = "google/gemma-4-31b-it";
 export const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+/** NIM cold start is ~2 min. Non-stream can hang — always stream. */
+export const NVIDIA_TIMEOUT_MS = 180_000;
 
 export type PaperBrokerId = "off";
 

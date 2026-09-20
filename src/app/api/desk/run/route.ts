@@ -3,6 +3,7 @@ import { getQuote, normalizeBook, runDesk, SEED_BOOK, UNIVERSE } from "@/lib/des
 import type { Book, Quote } from "@/lib/desk";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
 export async function POST(request: Request) {
   try {

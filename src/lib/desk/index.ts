@@ -43,6 +43,7 @@ export {
   isLiveTrading,
   LIVE_TRADING,
   NVIDIA_MODEL,
+  NVIDIA_TIMEOUT_MS,
   paperBroker,
 } from "./trading-mode";
 export { buildRiskChecks } from "./risk-checks";
