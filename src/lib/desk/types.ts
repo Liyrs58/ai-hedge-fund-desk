@@ -48,6 +48,22 @@ export interface Agent {
   mandate: string;
 }
 
+/** Provenance for a quote field group shown on the desk. */
+export type FieldSource = "yahoo" | "sample" | "computed" | "wire";
+
+export interface FieldProvenance {
+  source: FieldSource;
+  asOf: string;
+}
+
+/** MARK / FUNDAMENTALS / TECHNICALS / NEWS each carry source + asOf. */
+export interface QuoteProvenance {
+  mark: FieldProvenance;
+  fundamentals: FieldProvenance;
+  technicals: FieldProvenance;
+  news: FieldProvenance;
+}
+
 export interface Quote {
   symbol: string;
   name: string;
@@ -67,6 +83,7 @@ export interface Quote {
   beta: number;
   mktCapB: number;
   spark: number[];
+  provenance: QuoteProvenance;
 }
 
 export interface DebateMessage {
@@ -133,7 +150,7 @@ export interface Exposure {
   shortPct: number;
   sectorPct: Record<string, number>;
   namePct: Record<string, number>;
-  dailyVar: number;
+  dailyRiskProxy: number;  /** vol-weighted exposure proxy — not VaR */
 }
 
 export interface RiskCheckView {
@@ -174,7 +191,7 @@ export interface RiskLimits {
   singleNamePct: number;
   sectorPct: number;
   shortPct: number;
-  dailyVar: number;
+  dailyRiskProxy: number;  /** vol-weighted exposure proxy — not VaR */
   maxDrawdownPct: number;
 }
 
