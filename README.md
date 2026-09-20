@@ -1,10 +1,16 @@
 # AHF · Desk 04
 
-Eleven-seat **paper** trading desk. Analysts mark a name on a shared blackboard, bull and bear argue, a trader proposes, a three-seat risk committee votes, and a judge applies hard book limits. You still stamp **Approve** or **Veto**. Nothing here is live capital. Nothing here is advice.
+Eleven-seat **paper** trading desk: analysts mark a name, bull/bear argue, trader proposes, risk votes, you Approve or Veto. Research-real · not live capital · not advice.
 
-**Best use case:** a TradingAgents teaching tool and multi-agent paper-trading **research-real** desk — walk a debate → ticket → risk veto/trim → paper fill. Yahoo last prices when the network answers; a JSON book that survives reload; mock LLM with zero keys, or NVIDIA NIM `google/gemma-4-31b-it` when `NVIDIA_API_KEY` is set.
+<video src="https://egqayuigreupgfhv.public.blob.vercel-storage.com/hedge/investor-pitch.mp4" controls width="720" poster=""></video>
 
-It follows [TradingAgents](https://github.com/TauricResearch/TradingAgents) (Xiao, Su, Deng, et al., arXiv [2412.20138](https://arxiv.org/abs/2412.20138)): fundamental / news / sentiment / technical, two-round bull/bear, trader, aggressive / conservative / neutral risk, then a judge. This repo is a TypeScript paper desk of that conversation, not a port of the Python research stack.
+[Watch investor pitch (~35s)](docs/demo/investor-pitch.mp4) · also served at `/demo/investor-pitch.mp4`
+
+**Live:** [https://ai-hedge-fund-desk.vercel.app](https://ai-hedge-fund-desk.vercel.app)
+
+Paper-only. `LIVE_TRADING` is hard-off. Optional Alpaca is paper URL only.
+
+---
 
 ## Run (zero keys)
 
