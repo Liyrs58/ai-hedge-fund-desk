@@ -8,12 +8,22 @@ export const SEED_BOOK: Book = {
     { ticker: "MSFT", shares: 120, avg: 412.1, sector: "Technology" },
     { ticker: "JPM", shares: 200, avg: 198.5, sector: "Financials" },
   ],
+  peakNav: STARTING_NAV,
 };
 
 export function cloneBook(book: Book): Book {
   return {
     cash: book.cash,
     positions: book.positions.map((p) => ({ ...p })),
+    peakNav: book.peakNav ?? STARTING_NAV,
+  };
+}
+
+export function normalizeBook(book: Book): Book {
+  return {
+    cash: book.cash,
+    positions: (book.positions ?? []).map((p) => ({ ...p })),
+    peakNav: book.peakNav ?? STARTING_NAV,
   };
 }
 
@@ -53,6 +63,8 @@ export function markBook(
 
   const nav = book.cash + long - short;
   const denom = nav === 0 ? STARTING_NAV : nav;
+  const peakNav = Math.max(book.peakNav ?? STARTING_NAV, nav);
+  const drawdownPct = peakNav > 0 ? Math.max(0, ((peakNav - nav) / peakNav) * 100) : 0;
 
   const toPct = (n: number) => (n / denom) * 100;
 
@@ -63,6 +75,8 @@ export function markBook(
 
   return {
     nav,
+    peakNav,
+    drawdownPct,
     grossPct: toPct(long + short),
     netPct: toPct(long - short),
     longPct: toPct(long),
@@ -73,12 +87,20 @@ export function markBook(
   };
 }
 
+export function withPeak(book: Book, quotes: Quote[] | Record<string, Quote>): Book {
+  const next = normalizeBook(book);
+  const exp = markBook(next, quotes);
+  next.peakNav = Math.max(next.peakNav, exp.nav);
+  return next;
+}
+
 export function ticketNotional(ticket: Ticket): number {
-  return ticket.shares * ticket.mark;
+  const px = ticket.fillPx ?? ticket.mark;
+  return ticket.shares * px;
 }
 
 export function sharesForPct(nav: number, pct: number, mark: number): number {
-  if (mark <= 0) return 0;
+  if (mark <= 0 || pct <= 0) return 0;
   return Math.max(0, Math.round((nav * (pct / 100)) / mark));
 }
 
@@ -86,23 +108,26 @@ export function canFill(ticket: Ticket): boolean {
   return !ticket.vetoed && ticket.side !== "HOLD" && ticket.shares > 0;
 }
 
-export function fillTicket(book: Book, ticket: Ticket): Book {
+export function fillTicket(book: Book, ticket: Ticket, quote?: Quote): Book {
   if (!canFill(ticket)) return cloneBook(book);
 
   const next = cloneBook(book);
+  const px = ticket.fillPx ?? ticket.mark;
+  const fee = ticket.feeUsd ?? 0;
   const signedShares =
     ticket.side === "SELL" ? -ticket.shares : ticket.shares;
-  const cashDelta = -signedShares * ticket.mark;
+  const cashDelta = -signedShares * px - fee;
   next.cash = Math.round((next.cash + cashDelta) * 100) / 100;
 
+  const sector = quote?.sector ?? ticket.sector ?? "Unknown";
   const existing = next.positions.find((p) => p.ticker === ticket.ticker);
   if (!existing) {
     if (signedShares !== 0) {
       next.positions.push({
         ticker: ticket.ticker,
         shares: signedShares,
-        avg: ticket.mark,
-        sector: "Unknown",
+        avg: px,
+        sector,
       });
     }
     return next;
@@ -115,27 +140,28 @@ export function fillTicket(book: Book, ticket: Ticket): Book {
   }
 
   if (existing.shares === 0 || Math.sign(existing.shares) !== Math.sign(newShares)) {
-    existing.avg = ticket.mark;
+    existing.avg = px;
     existing.shares = newShares;
+    existing.sector = sector;
     return next;
   }
 
   const oldValue = existing.shares * existing.avg;
-  const addValue = signedShares * ticket.mark;
+  const addValue = signedShares * px;
   existing.shares = newShares;
   existing.avg = (oldValue + addValue) / newShares;
+  existing.sector = sector;
   return next;
 }
 
 export function attachSectors(book: Book, quotes: Quote[]): Book {
   const map = Object.fromEntries(quotes.map((q) => [q.symbol, q]));
-  return {
-    ...book,
-    positions: book.positions.map((p) => ({
-      ...p,
-      sector: map[p.ticker]?.sector ?? p.sector,
-    })),
-  };
+  const next = normalizeBook(book);
+  next.positions = next.positions.map((p) => ({
+    ...p,
+    sector: map[p.ticker]?.sector ?? p.sector,
+  }));
+  return next;
 }
 
 export function limitBreaches(exposure: Exposure): string[] {
@@ -148,6 +174,11 @@ export function limitBreaches(exposure: Exposure): string[] {
   }
   if (exposure.dailyVar > RISK_LIMITS.dailyVar) {
     out.push(`VaR ${Math.round(exposure.dailyVar)} > ${RISK_LIMITS.dailyVar}`);
+  }
+  if (exposure.drawdownPct > RISK_LIMITS.maxDrawdownPct) {
+    out.push(
+      `Drawdown ${exposure.drawdownPct.toFixed(1)}% > ${RISK_LIMITS.maxDrawdownPct}%`,
+    );
   }
   for (const [name, pct] of Object.entries(exposure.namePct)) {
     if (Math.abs(pct) > RISK_LIMITS.singleNamePct) {
