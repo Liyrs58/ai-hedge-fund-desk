@@ -17,7 +17,7 @@ export function SessionClock() {
       {padSession(now)} {tzLabel(now)}
       <span className="mx-3 text-mute"> </span>
       {padDate(now)}
-      <span className="ml-4 text-mute">v2.7.1</span>
+      <span className="ml-4 text-mute">v2.9.0</span>
     </span>
   );
 }
@@ -36,6 +36,6 @@ export function useNow(ms = 1000): Date | null {
 }
 
 export function marketLabel(now: Date | null): string {
-  if (!now) return "—";
+  if (!now) return "\u2014";
   return isCashOpen(now) ? "OPEN (ET)" : "CLOSED (ET)";
 }

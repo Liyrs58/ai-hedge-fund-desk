@@ -42,7 +42,7 @@ export function DebateStream({
         <span>DEBATE TRANSCRIPT</span>
         <span className="flex items-center gap-2 text-[11px]">
           STREAM
-          <span className="text-mute">·</span>
+          <span className="text-mute">\u00b7</span>
           <LiveDot className={running || messages.length > 0 ? "bg-copper" : "bg-mute"} />
           <span className={running ? "text-copper" : "text-mute"}>LIVE</span>
         </span>
@@ -56,8 +56,9 @@ export function DebateStream({
             className="max-w-md font-mono text-[12px] leading-relaxed text-mute"
             data-qa="tape-idle"
           >
-            No session on the tape. Pick a name, then run the desk. Analysts mark
-            first. Hale proposes. Sato has veto — you still approve or block.
+            No session on the tape. Pick a name, then run the desk. Four
+            analysts mark. Bull and bear argue. Hale proposes. Risk committee
+            votes. Sato applies limits \u2014 you still approve or block.
           </p>
         ) : null}
         <ol className="space-y-2.5">

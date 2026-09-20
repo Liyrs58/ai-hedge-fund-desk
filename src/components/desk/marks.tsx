@@ -20,6 +20,13 @@ export function AgentIcon({ id }: { id: AgentId }) {
       </svg>
     );
   }
+  if (id === "news") {
+    return (
+      <svg {...common}>
+        <path d="M5 6h14M5 10h10M5 14h14M5 18h8" />
+      </svg>
+    );
+  }
   if (id === "sentiment") {
     return (
       <svg {...common}>
@@ -34,6 +41,43 @@ export function AgentIcon({ id }: { id: AgentId }) {
         <path d="M5 18V6" />
         <path d="M5 18h14" />
         <path d="M8 14v-3M12 14V8M16 14v-5" />
+      </svg>
+    );
+  }
+  if (id === "bull") {
+    return (
+      <svg {...common}>
+        <path d="M5 16.5 10 10 13.5 13.5 19 6.5" />
+        <path d="M14 6.5h5v5" />
+      </svg>
+    );
+  }
+  if (id === "bear") {
+    return (
+      <svg {...common}>
+        <path d="M5 7.5 10 14 13.5 10.5 19 17.5" />
+        <path d="M14 17.5h5v-5" />
+      </svg>
+    );
+  }
+  if (id === "aggressive") {
+    return (
+      <svg {...common}>
+        <path d="M6 18V9M12 18V6M18 18v-4" />
+      </svg>
+    );
+  }
+  if (id === "conservative") {
+    return (
+      <svg {...common}>
+        <path d="M6 18v-4M12 18V10M18 18V6" />
+      </svg>
+    );
+  }
+  if (id === "neutral") {
+    return (
+      <svg {...common}>
+        <path d="M5 12h14M12 5v14" />
       </svg>
     );
   }

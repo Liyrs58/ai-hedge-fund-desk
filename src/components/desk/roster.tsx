@@ -31,7 +31,7 @@ export function AgentRoster({
           <span className={live ? "text-copper" : "text-mute"}>LIVE</span>
         </span>
       </div>
-      <ul className="flex-1">
+      <ul className="desk-scroll min-h-0 flex-1 overflow-auto">
         {AGENTS.map((agent) => {
           const status = statuses[agent.id];
           const hot = status === "SPEAKING";
@@ -43,7 +43,7 @@ export function AgentRoster({
                 onClick={() => onSelect(agent.id)}
                 data-qa={`agent-${agent.id}`}
                 className={cn(
-                  "grid w-full cursor-pointer grid-cols-[36px_1fr_auto] items-center gap-3 px-4 py-3.5 text-left",
+                  "grid w-full cursor-pointer grid-cols-[36px_1fr_auto] items-center gap-3 px-4 py-1.5 text-left",
                   active ? "bg-[#ebe6d8]" : "hover:bg-[#ebe6d8]/60",
                 )}
               >
@@ -61,7 +61,7 @@ export function AgentRoster({
                   </div>
                 </div>
                 <span className="font-mono text-[11px] tabular-nums text-mute">
-                  {lastAt[agent.id] ?? "—"}
+                  {lastAt[agent.id] ?? "\u2014"}
                 </span>
               </button>
             </li>
@@ -70,7 +70,7 @@ export function AgentRoster({
       </ul>
       <div className="flex items-center justify-between px-4 py-2.5 font-mono text-[11px] tracking-wide text-mute">
         <span>
-          {AGENTS.length} AGENTS · {speaking} SPEAKING
+          {AGENTS.length} AGENTS \u00b7 {speaking} SPEAKING
         </span>
         <span>UPTIME {uptime}</span>
       </div>
