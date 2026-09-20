@@ -1,14 +1,10 @@
 import { fillTicket, normalizeBook, SEED_BOOK } from "./book";
+import { assertPaperAlpacaBaseUrl } from "./broker";
 import { priceTicket } from "./execution";
+import { ALPACA_PAPER_URL, nvidiaBaseUrl, nvidiaModel, paperBroker, NVIDIA_TIMEOUT_MS } from "./flags";
 import { buildMockRun } from "./pipeline";
 import { detectProvider } from "./provider";
 import { isLiveTrading } from "./trading-mode";
-import {
-  nvidiaBaseUrl,
-  nvidiaModel,
-  paperBroker,
-  NVIDIA_TIMEOUT_MS,
-} from "./flags";
 import { UNIVERSE } from "./universe";
 
 export interface PaperCheck {
@@ -78,10 +74,80 @@ export function runPaperPath(): PaperCheck {
     NVIDIA_TIMEOUT_MS >= 180_000,
     "NVIDIA client timeout must be >= 180s.",
   );
-  expect(failures, paperBroker() === "off", "PAPER_BROKER must stay off.");
+  checkPaperBrokerFlags(failures, report);
+  checkStoreFlags(failures, report);
   if (!process.env.NVIDIA_API_KEY?.trim()) {
     expect(failures, detectProvider() === "mock", "No NVIDIA key must stay MOCK.");
   }
 
   return { ok: failures.length === 0, report, failures };
+}
+
+function checkPaperBrokerFlags(failures: string[], report: string[]) {
+  const prevBroker = process.env.PAPER_BROKER;
+  const prevKey = process.env.ALPACA_API_KEY;
+  const prevSecret = process.env.ALPACA_API_SECRET;
+
+  delete process.env.PAPER_BROKER;
+  expect(failures, paperBroker() === "off", "PAPER_BROKER default must be off.");
+
+  process.env.PAPER_BROKER = "alpaca";
+  delete process.env.ALPACA_API_KEY;
+  delete process.env.ALPACA_API_SECRET;
+  expect(
+    failures,
+    paperBroker() === "missing-keys",
+    "PAPER_BROKER=alpaca without keys must be missing-keys.",
+  );
+
+  process.env.ALPACA_API_KEY = "paper-key";
+  process.env.ALPACA_API_SECRET = "paper-secret";
+  expect(
+    failures,
+    paperBroker() === "alpaca",
+    "PAPER_BROKER=alpaca with keys must be alpaca.",
+  );
+
+  let liveThrew = false;
+  try {
+    assertPaperAlpacaBaseUrl("https://api.alpaca.markets");
+  } catch {
+    liveThrew = true;
+  }
+  expect(failures, liveThrew, "Live Alpaca URL must be refused.");
+
+  let paperOk = false;
+  try {
+    paperOk = assertPaperAlpacaBaseUrl(ALPACA_PAPER_URL) === "https://paper-api.alpaca.markets";
+  } catch {
+    paperOk = false;
+  }
+  expect(failures, paperOk, "Paper Alpaca URL must be accepted.");
+  report.push("Alpaca paper URL allowed; live api.alpaca.markets refused.");
+
+  if (prevBroker === undefined) delete process.env.PAPER_BROKER;
+  else process.env.PAPER_BROKER = prevBroker;
+  if (prevKey === undefined) delete process.env.ALPACA_API_KEY;
+  else process.env.ALPACA_API_KEY = prevKey;
+  if (prevSecret === undefined) delete process.env.ALPACA_API_SECRET;
+  else process.env.ALPACA_API_SECRET = prevSecret;
+
+  const restored = paperBroker();
+  expect(
+    failures,
+    restored === "off" || restored === "alpaca" || restored === "missing-keys",
+    `paperBroker restored to ${restored}.`,
+  );
+}
+
+function checkStoreFlags(failures: string[], report: string[]) {
+  const blobOn =
+    (process.env.DESK_STORE ?? "").trim().toLowerCase() === "blob" &&
+    Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  if (!blobOn) {
+    expect(failures, true, "Store fallback must be json-file.");
+    report.push("Store backend json-file (blob not selected).");
+  } else {
+    report.push("Store backend blob.");
+  }
 }

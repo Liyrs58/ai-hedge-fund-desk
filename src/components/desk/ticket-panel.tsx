@@ -26,6 +26,7 @@ export function PositionTicket({
   blotter,
   onVeto,
   onApprove,
+  approving = false,
 }: {
   ticket: Ticket | null;
   pending: boolean;
@@ -37,6 +38,7 @@ export function PositionTicket({
   blotter: Ticket[];
   onVeto: () => void;
   onApprove: () => void;
+  approving?: boolean;
 }) {
   const status = !ticket
     ? pending
@@ -48,7 +50,7 @@ export function PositionTicket({
         ? "VETOED"
         : "PENDING";
 
-  const actionable = !!ticket && ticket.status === "proposed";
+  const actionable = !!ticket && ticket.status === "proposed" && !approving;
   const workingShares = ticket
     ? ticket.side === "HOLD"
       ? 0

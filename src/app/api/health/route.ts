@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { detectProvider } from "@/lib/desk/provider";
-import {
-  isLiveTrading,
-  nvidiaModel,
-  paperBroker,
-} from "@/lib/desk/flags";
+import { isLiveTrading, nvidiaModel, paperBroker } from "@/lib/desk/flags";
 import { lastQuoteTape, loadQuoteTape } from "@/lib/desk/quotes-feed";
 import { storeInfo } from "@/lib/desk/store";
+import { demoAuthRequired } from "@/lib/desk/demo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +14,7 @@ export async function GET() {
   const llm = detectProvider();
   const tape = lastQuoteTape();
   const quotes = tape?.source === "yahoo" ? "LIVE" : tape?.source === "sample" ? "SAMPLE" : "UNKNOWN";
+  const store = await storeInfo();
   return NextResponse.json({
     ok: true,
     liveTrading: isLiveTrading(),
@@ -31,6 +29,15 @@ export async function GET() {
       badge: quotes,
       note: tape?.note ?? null,
     },
-    store: storeInfo(),
+    store: {
+      backend: store.backend,
+      durable: store.durable,
+      path: store.path,
+      writable: store.writable,
+      updatedAt: store.updatedAt,
+    },
+    auth: {
+      required: demoAuthRequired(),
+    },
   });
 }

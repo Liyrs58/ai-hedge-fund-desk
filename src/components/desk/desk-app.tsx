@@ -14,12 +14,10 @@ import {
   attachSectors,
   buildMockRun,
   cloneBook,
-  fillTicket,
   markBook,
   normalizeBook,
   NVIDIA_TIMEOUT_MS,
   padSession,
-  priceTicket,
   SEED_BLOTTER,
   SEED_BOOK,
   UNIVERSE,
@@ -96,6 +94,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   const [view, setView] = useState<View>("floor");
   const [focus, setFocus] = useState<AgentId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   const [ticks, setTicks] = useState(0);
   const isLg = useSyncExternalStore(subscribeLg, lgSnapshot, () => false);
   const now = useNow(1000);
@@ -155,13 +154,20 @@ export function DeskApp({ session }: { session: SessionPayload }) {
           liveTrading?: boolean;
           llm?: { badge?: string };
           quotes?: { badge?: string };
-          store?: { durable?: boolean };
+          store?: { durable?: boolean; backend?: string };
+          auth?: { required?: boolean };
         };
         const marks = data.quotes?.badge ?? "UNKNOWN";
         const llm = data.llm?.badge ?? "MOCK";
-        const store = data.store?.durable ? "FILE" : "TMP";
+        const store =
+          data.store?.backend === "blob"
+            ? "BLOB"
+            : data.store?.durable
+              ? "FILE"
+              : "TMP";
+        const auth = data.auth?.required ? "ON" : "OFF";
         setHealthLine(
-          `${data.ok ? "OK" : "DOWN"} MARKS ${marks} LLM ${llm} STORE ${store} BROKER ${data.paperBroker ?? "off"} LIVE ${data.liveTrading === true}`,
+          `${data.ok ? "OK" : "DOWN"} MARKS ${marks} LLM ${llm} STORE ${store} AUTH ${auth} BROKER ${data.paperBroker ?? "off"} LIVE ${data.liveTrading === true}`,
         );
       } catch {
         setHealthLine("DOWN");
@@ -297,31 +303,50 @@ export function DeskApp({ session }: { session: SessionPayload }) {
       setError("Live trading is disabled. Paper desk only.");
       return;
     }
-    if (!run?.ticket || run.ticket.status !== "proposed") return;
-    const priced = priceTicket(
-      { ...run.ticket, status: "filled" },
-      quoteMap[run.ticket.ticker] ?? quote,
-    );
-    if (priced.side !== "HOLD" && priced.shares > 0 && !priced.vetoed) {
-      const nextBook = withPeak(
-        attachSectors(
-          fillTicket(normalizeBook(book), priced, quoteMap[priced.ticker] ?? quote),
-          quotes,
-        ),
-        quotes,
-      );
-      const nextBlotter = [priced, ...blotter].slice(0, 24);
-      setBookRaw(nextBook);
-      setBlotter(nextBlotter);
-      pushStore(nextBook, nextBlotter);
-    } else {
-      const nextBlotter = [priced, ...blotter].slice(0, 24);
-      setBlotter(nextBlotter);
-      pushStore(book, nextBlotter);
-    }
-    setRun({ ...run, ticket: priced });
-    setCursor(run.messages.length);
-  }, [run, quotes, quote, quoteMap, book, blotter, session.liveTrading]);
+    if (!run?.ticket || run.ticket.status !== "proposed" || approving) return;
+    const quoteForFill = quoteMap[run.ticket.ticker] ?? quote;
+    setApproving(true);
+    setError(null);
+    void (async () => {
+      try {
+        const res = await fetch("/api/desk/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({
+            ticket: run.ticket,
+            quote: quoteForFill,
+            book,
+            blotter,
+            quotes,
+          }),
+        });
+        const data = (await res.json()) as {
+          book?: Book;
+          blotter?: Ticket[];
+          ticket?: Ticket;
+          error?: string;
+          fillSource?: string;
+        };
+        if (!res.ok || !data.ticket) {
+          setError(data.error ?? "Approve failed. Paper fill not booked.");
+          return;
+        }
+        if (data.book) setBookRaw(normalizeBook(data.book));
+        if (Array.isArray(data.blotter)) setBlotter(data.blotter);
+        writeLocal(
+          data.book ? normalizeBook(data.book) : book,
+          Array.isArray(data.blotter) ? data.blotter : blotter,
+        );
+        setRun({ ...run, ticket: data.ticket });
+        setCursor(run.messages.length);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Approve failed.");
+      } finally {
+        setApproving(false);
+      }
+    })();
+  }, [run, quotes, quote, quoteMap, book, blotter, session.liveTrading, approving]);
 
   const onVeto = useCallback(() => {
     if (!run?.ticket || run.ticket.status !== "proposed") return;
@@ -410,6 +435,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
       blotter={blotter}
       onVeto={onVeto}
       onApprove={onApprove}
+      approving={approving}
     />
   );
 
@@ -473,7 +499,12 @@ export function DeskApp({ session }: { session: SessionPayload }) {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-paper">
-      <DeskHeader quote={quote} quoteSource={quoteSource} llm={llmLabel} />
+      <DeskHeader
+        quote={quote}
+        quoteSource={quoteSource}
+        llm={llmLabel}
+        paperBroker={session.paperBroker}
+      />
       <ControlStrip
         quotes={quotes}
         ticker={ticker}

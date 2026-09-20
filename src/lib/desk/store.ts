@@ -5,6 +5,8 @@ import { SEED_BLOTTER } from "./blotter";
 import { UNIVERSE } from "./universe";
 import type { Book, Ticket } from "./types";
 
+export type StoreBackend = "blob" | "json-file";
+
 export interface DeskSnapshot {
   book: Book;
   blotter: Ticket[];
@@ -12,7 +14,7 @@ export interface DeskSnapshot {
 }
 
 export interface StoreInfo {
-  backend: "json-file";
+  backend: StoreBackend;
   path: string;
   durable: boolean;
   writable: boolean;
@@ -22,6 +24,7 @@ export interface StoreInfo {
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOCAL_FILE = path.join(DATA_DIR, "desk-store.json");
 const TMP_FILE = "/tmp/ahf-desk-store.json";
+const BLOB_PATH = "ahf-desk-store.json";
 
 function seedSnapshot(): DeskSnapshot {
   return {
@@ -65,13 +68,104 @@ function resolveFile(): { file: string; durable: boolean } {
   return { file: TMP_FILE, durable: false };
 }
 
-export function storeInfo(): StoreInfo {
+function blobToken(): string {
+  return process.env.BLOB_READ_WRITE_TOKEN?.trim() ?? "";
+}
+
+export function blobStoreRequested(): boolean {
+  return (process.env.DESK_STORE ?? "").trim().toLowerCase() === "blob";
+}
+
+export function blobStoreEnabled(): boolean {
+  return blobStoreRequested() && Boolean(blobToken());
+}
+
+export function storeBackend(): StoreBackend {
+  return blobStoreEnabled() ? "blob" : "json-file";
+}
+
+function parseSnapshot(raw: unknown): DeskSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const data = raw as Partial<DeskSnapshot>;
+  if (!data.book || !Array.isArray(data.blotter)) return null;
+  return {
+    book: data.book,
+    blotter: data.blotter,
+    updatedAt: data.updatedAt ?? null,
+  };
+}
+
+async function readBlobStore(): Promise<DeskSnapshot | null> {
+  const { get } = await import("@vercel/blob");
+  for (const access of ["private", "public"] as const) {
+    try {
+      const result = await get(BLOB_PATH, { access, useCache: false });
+      if (!result || result.statusCode !== 200 || !result.stream) continue;
+      const text = await new Response(result.stream).text();
+      const parsed = parseSnapshot(JSON.parse(text));
+      if (parsed) return parsed;
+    } catch {
+      /* try the other access mode */
+    }
+  }
+  return null;
+}
+
+async function writeBlobStore(next: DeskSnapshot): Promise<void> {
+  const { put } = await import("@vercel/blob");
+  const body = `${JSON.stringify(next, null, 2)}\n`;
+  const options = {
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+  } as const;
+  try {
+    await put(BLOB_PATH, body, { ...options, access: "private" });
+  } catch {
+    await put(BLOB_PATH, body, { ...options, access: "public" });
+  }
+}
+
+function readJsonFile(): DeskSnapshot {
+  const { file } = resolveFile();
+  try {
+    if (!existsFile(file)) return seedSnapshot();
+    const parsed = parseSnapshot(JSON.parse(readFile(file)));
+    return parsed ?? seedSnapshot();
+  } catch {
+    return seedSnapshot();
+  }
+}
+
+function writeJsonFile(next: DeskSnapshot): DeskSnapshot {
+  const { file } = resolveFile();
+  writeFile(file, `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
+export async function storeInfo(): Promise<StoreInfo> {
+  if (blobStoreEnabled()) {
+    let updatedAt: string | null = null;
+    try {
+      const snap = await readBlobStore();
+      updatedAt = snap?.updatedAt ?? null;
+    } catch {
+      updatedAt = null;
+    }
+    return {
+      backend: "blob",
+      path: BLOB_PATH,
+      durable: true,
+      writable: true,
+      updatedAt,
+    };
+  }
   const { file, durable } = resolveFile();
   let updatedAt: string | null = null;
   try {
     if (existsFile(file)) {
-      const raw = JSON.parse(readFile(file)) as DeskSnapshot;
-      updatedAt = raw.updatedAt ?? null;
+      const raw = parseSnapshot(JSON.parse(readFile(file)));
+      updatedAt = raw?.updatedAt ?? null;
     }
   } catch {
     updatedAt = null;
@@ -85,34 +179,31 @@ export function storeInfo(): StoreInfo {
   };
 }
 
-export function readDeskStore(): DeskSnapshot {
-  const { file } = resolveFile();
-  try {
-    if (!existsFile(file)) return seedSnapshot();
-    const raw = JSON.parse(readFile(file)) as Partial<DeskSnapshot>;
-    if (!raw.book || !Array.isArray(raw.blotter)) return seedSnapshot();
-    return {
-      book: raw.book,
-      blotter: raw.blotter,
-      updatedAt: raw.updatedAt ?? null,
-    };
-  } catch {
-    return seedSnapshot();
+export async function readDeskStore(): Promise<DeskSnapshot> {
+  if (blobStoreEnabled()) {
+    try {
+      return (await readBlobStore()) ?? seedSnapshot();
+    } catch {
+      return seedSnapshot();
+    }
   }
+  return readJsonFile();
 }
 
-export function writeDeskStore(book: Book, blotter: Ticket[]): DeskSnapshot {
-  const { file } = resolveFile();
+export async function writeDeskStore(book: Book, blotter: Ticket[]): Promise<DeskSnapshot> {
   const next: DeskSnapshot = {
     book,
     blotter: blotter.slice(0, 24),
     updatedAt: new Date().toISOString(),
   };
-  writeFile(file, `${JSON.stringify(next, null, 2)}\n`);
-  return next;
+  if (blobStoreEnabled()) {
+    await writeBlobStore(next);
+    return next;
+  }
+  return writeJsonFile(next);
 }
 
-export function resetDeskStore(): DeskSnapshot {
+export async function resetDeskStore(): Promise<DeskSnapshot> {
   const seed = seedSnapshot();
   return writeDeskStore(seed.book, seed.blotter);
 }

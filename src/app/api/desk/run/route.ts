@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getQuote, normalizeBook, runDesk, SEED_BOOK, UNIVERSE } from "@/lib/desk";
+import { denyIfUnauthorized } from "@/lib/desk/demo-auth";
 import type { Book, Quote } from "@/lib/desk";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
 export async function POST(request: Request) {
+  const denied = denyIfUnauthorized(request);
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       ticker?: string;
