@@ -12,7 +12,9 @@
     "lint": "eslint",
     "paper": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register.mjs scripts/paper-run.ts",
     "ensure:pitch": "node scripts/ensure-investor-pitch.cjs",
-    "prebuild": "node scripts/ensure-investor-pitch.cjs"
+    "prebuild": "node scripts/ensure-investor-pitch.cjs",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register.mjs --test tests/**/*.test.ts",
+    "ci": "npm run lint && npm run test && npm run paper && npm run build"
   },
   "dependencies": {
     "@vercel/blob": "^2.3.3",

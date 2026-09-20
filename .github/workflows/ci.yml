@@ -1,0 +1,30 @@
+name: Offline CI
+
+on:
+  push:
+    branches: [main, "quant/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Finance unit tests
+        run: npm test
+      - name: Paper smoke
+        run: npm run paper
+      - name: Production build
+        run: npm run build
+        env:
+          SKIP_PITCH_FETCH: "1"
