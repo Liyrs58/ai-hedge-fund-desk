@@ -23,7 +23,7 @@ const newsreader = Newsreader({
 export const metadata: Metadata = {
   title: "AHF · Desk 04",
   description:
-    "Multi-agent paper trading research desk. Eleven seats debate a name; risk has a real veto. Teaching tool for TradingAgents. Not investment advice.",
+    "Multi-agent paper trading research desk. Mock LLM or free NVIDIA NIM. Not investment advice.",
   icons: { icon: "/favicon.svg" },
 };
 

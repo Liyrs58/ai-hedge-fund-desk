@@ -30,7 +30,7 @@ export type TicketStatus =
   | "vetoed"
   | "filled";
 
-export type ProviderId = "mock" | "openai" | "anthropic" | "gemini" | "grok";
+export type ProviderId = "mock" | "nvidia";
 
 export type QuoteSource = "sample" | "yahoo";
 
@@ -158,6 +158,8 @@ export interface SessionPayload {
   provider: ProviderId;
   quotes: Quote[];
   quoteSource: QuoteSource;
+  marksNote: string | null;
+  liveTrading: false;
   book: Book;
   blotter: Ticket[];
   limits: RiskLimits;
