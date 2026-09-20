@@ -1,6 +1,8 @@
 import { fillTicket, normalizeBook, SEED_BOOK } from "./book";
 import { priceTicket } from "./execution";
 import { buildMockRun } from "./pipeline";
+import { detectProvider } from "./provider";
+import { isLiveTrading } from "./trading-mode";
 import { UNIVERSE } from "./universe";
 
 export interface PaperCheck {
@@ -54,6 +56,10 @@ export function runPaperPath(): PaperCheck {
   );
   expect(failures, tsla.ticket.side === "SELL", `TSLA side ${tsla.ticket.side}, want SELL.`);
   expect(failures, tsla.ticket.shares > 0, "TSLA short has no shares.");
+  expect(failures, isLiveTrading() === false, "LIVE_TRADING must stay false.");
+  if (!process.env.NVIDIA_API_KEY?.trim()) {
+    expect(failures, detectProvider() === "mock", "No NVIDIA key must stay MOCK.");
+  }
 
   return { ok: failures.length === 0, report, failures };
 }

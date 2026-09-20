@@ -38,7 +38,8 @@ export {
   SESSION_LABEL,
   STARTING_NAV,
 } from "./limits";
-export { detectProvider, runDesk } from "./provider";
+export { detectProvider, nvidiaModel, runDesk } from "./provider";
+export { isLiveTrading, LIVE_TRADING } from "./trading-mode";
 export { buildRiskChecks } from "./risk-checks";
 export type { RiskCheck } from "./risk-checks";
 export type { RiskVerdict } from "./risk-engine";

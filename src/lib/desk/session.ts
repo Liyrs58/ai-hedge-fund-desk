@@ -12,6 +12,8 @@ export function getSession(): SessionPayload {
     provider: detectProvider(),
     quotes: UNIVERSE,
     quoteSource: "sample",
+    marksNote: null,
+    liveTrading: false,
     book: attachSectors(SEED_BOOK, UNIVERSE),
     blotter: SEED_BLOTTER,
     limits: RISK_LIMITS,

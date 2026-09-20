@@ -4,26 +4,27 @@ import { runPipeline } from "./pipeline";
 import { STARTING_NAV } from "./limits";
 import type { Book, DebateMessage, DeskRun, ProviderId, Quote } from "./types";
 
+const NVIDIA_BASE =
+  process.env.NVIDIA_BASE_URL?.replace(/\/$/, "") ??
+  "https://integrate.api.nvidia.com/v1";
+
+/** Free catalog chat model on build.nvidia.com (OpenAI-compatible NIM). */
+const NVIDIA_MODEL =
+  process.env.NVIDIA_MODEL ?? "meta/llama-3.1-8b-instruct";
+
 export function detectProvider(): ProviderId {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
   if (forced === "mock") return "mock";
-  if (forced === "openai" && process.env.OPENAI_API_KEY) return "openai";
-  if (forced === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (
-    (forced === "gemini" || forced === "google") &&
-    (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)
-  ) {
-    return "gemini";
+  const key = process.env.NVIDIA_API_KEY?.trim();
+  if (!key) return "mock";
+  if (!forced || forced === "auto" || forced === "nvidia" || forced === "nim") {
+    return "nvidia";
   }
-  if (forced === "grok" && process.env.XAI_API_KEY) return "grok";
-
-  if (forced && forced !== "auto") return "mock";
-
-  if (process.env.OPENAI_API_KEY) return "openai";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.XAI_API_KEY) return "grok";
   return "mock";
+}
+
+export function nvidiaModel(): string {
+  return NVIDIA_MODEL;
 }
 
 const REWRITE_PROMPT = `You are rewriting a paper-trading desk transcript.
@@ -44,106 +45,32 @@ function extractBodies(text: string, expected: number): string[] {
   return parsed.bodies.map((b) => String(b));
 }
 
-async function callOpenAI(prompt: string): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+async function callNvidia(prompt: string): Promise<string> {
+  const key = process.env.NVIDIA_API_KEY?.trim();
+  if (!key) throw new Error("NVIDIA_API_KEY missing");
+  const res = await fetch(`${NVIDIA_BASE}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: REWRITE_PROMPT },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}`);
-  const json = (await res.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-  return json.choices[0]?.message.content ?? "";
-}
-
-async function callAnthropic(prompt: string): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-0",
+      model: NVIDIA_MODEL,
+      temperature: 0.2,
       max_tokens: 2500,
-      messages: [{ role: "user", content: `${REWRITE_PROMPT}\n\n${prompt}` }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
-  const json = (await res.json()) as {
-    content: Array<{ type: string; text?: string }>;
-  };
-  return json.content.find((c) => c.type === "text")?.text ?? "";
-}
-
-async function callGemini(prompt: string): Promise<string> {
-  const key = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${REWRITE_PROMPT}\n\n${prompt}` }] }],
-      }),
-    },
-  );
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const json = (await res.json()) as {
-    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
-  };
-  return json.candidates[0]?.content.parts[0]?.text ?? "";
-}
-
-async function callGrok(prompt: string): Promise<string> {
-  const res = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.XAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.XAI_MODEL ?? "grok-3",
-      temperature: 0.3,
+      stream: false,
       messages: [
         { role: "system", content: REWRITE_PROMPT },
         { role: "user", content: prompt },
       ],
     }),
   });
-  if (!res.ok) throw new Error(`Grok ${res.status}`);
+  if (!res.ok) throw new Error(`NVIDIA ${res.status}`);
   const json = (await res.json()) as {
-    choices: Array<{ message: { content: string } }>;
+    choices?: Array<{ message?: { content?: string } }>;
   };
-  return json.choices[0]?.message.content ?? "";
-}
-
-async function liveText(provider: ProviderId, prompt: string): Promise<string> {
-  switch (provider) {
-    case "openai":
-      return callOpenAI(prompt);
-    case "anthropic":
-      return callAnthropic(prompt);
-    case "gemini":
-      return callGemini(prompt);
-    case "grok":
-      return callGrok(prompt);
-    default:
-      throw new Error("mock");
-  }
+  return json.choices?.[0]?.message?.content ?? "";
 }
 
 function packMessages(messages: DebateMessage[]): string {
@@ -196,22 +123,21 @@ export async function runDesk(
   }
 
   try {
-    const text = await liveText(
-      provider,
+    const text = await callNvidia(
       `NAV context ${STARTING_NAV}. Rewrite these ${computed.messages.length} messages:\n${packMessages(computed.messages)}`,
     );
     const bodies = extractBodies(text, computed.messages.length);
     return {
       ...base,
       messages: applyBodies(computed.messages, bodies),
-      provider,
+      provider: "nvidia",
       fallbackFrom: null,
     };
   } catch {
     return {
       ...base,
       provider: "mock",
-      fallbackFrom: provider,
+      fallbackFrom: "nvidia",
     };
   }
 }
