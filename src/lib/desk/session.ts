@@ -2,6 +2,7 @@ import { SEED_BLOTTER } from "./blotter";
 import { attachSectors, SEED_BOOK } from "./book";
 import { detectProvider } from "./provider";
 import { AS_OF, RISK_LIMITS, SESSION_LABEL } from "./limits";
+import { nvidiaModel, paperBroker } from "./flags";
 import { UNIVERSE } from "./universe";
 import type { SessionPayload } from "./types";
 
@@ -14,6 +15,8 @@ export function getSession(): SessionPayload {
     quoteSource: "sample",
     marksNote: null,
     liveTrading: false,
+    paperBroker: paperBroker(),
+    llmModel: nvidiaModel(),
     book: attachSectors(SEED_BOOK, UNIVERSE),
     blotter: SEED_BLOTTER,
     limits: RISK_LIMITS,

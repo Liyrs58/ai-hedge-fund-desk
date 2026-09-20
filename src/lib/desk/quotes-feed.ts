@@ -10,6 +10,12 @@ export interface QuoteTape {
 
 const SAMPLE_NOTE = "Yahoo did not answer. Sample marks still on the tape.";
 
+let lastTape: QuoteTape | null = null;
+
+export function lastQuoteTape(): QuoteTape | null {
+  return lastTape;
+}
+
 export async function loadQuoteTape(timeoutMs = 2800): Promise<QuoteTape> {
   try {
     const snaps = await fetchYahooSnaps(
@@ -17,14 +23,17 @@ export async function loadQuoteTape(timeoutMs = 2800): Promise<QuoteTape> {
       timeoutMs,
     );
     if (snaps.length === 0) {
-      return { source: "sample", quotes: UNIVERSE, note: SAMPLE_NOTE };
+      lastTape = { source: "sample", quotes: UNIVERSE, note: SAMPLE_NOTE };
+      return lastTape;
     }
-    return {
+    lastTape = {
       source: "yahoo",
       quotes: overlayQuotes(UNIVERSE, snaps),
       note: `Yahoo last on ${snaps.map((s) => s.symbol).join(" ")}. PE / RSI / IV stay paper.`,
     };
+    return lastTape;
   } catch {
-    return { source: "sample", quotes: UNIVERSE, note: SAMPLE_NOTE };
+    lastTape = { source: "sample", quotes: UNIVERSE, note: SAMPLE_NOTE };
+    return lastTape;
   }
 }

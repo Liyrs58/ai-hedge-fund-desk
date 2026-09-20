@@ -1,16 +1,11 @@
 import { normalizeBook, SEED_BOOK } from "./book";
-import { UNIVERSE } from "./universe";
-import { runPipeline } from "./pipeline";
+import { nvidiaBaseUrl, nvidiaModel } from "./flags";
 import { STARTING_NAV } from "./limits";
+import { runPipeline } from "./pipeline";
+import { UNIVERSE } from "./universe";
 import type { Book, DebateMessage, DeskRun, ProviderId, Quote } from "./types";
 
-const NVIDIA_BASE =
-  process.env.NVIDIA_BASE_URL?.replace(/\/$/, "") ??
-  "https://integrate.api.nvidia.com/v1";
-
-/** Free catalog chat model on build.nvidia.com (OpenAI-compatible NIM). */
-const NVIDIA_MODEL =
-  process.env.NVIDIA_MODEL ?? "meta/llama-3.1-8b-instruct";
+export { nvidiaModel } from "./flags";
 
 export function detectProvider(): ProviderId {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
@@ -21,10 +16,6 @@ export function detectProvider(): ProviderId {
     return "nvidia";
   }
   return "mock";
-}
-
-export function nvidiaModel(): string {
-  return NVIDIA_MODEL;
 }
 
 const REWRITE_PROMPT = `You are rewriting a paper-trading desk transcript.
@@ -48,7 +39,7 @@ function extractBodies(text: string, expected: number): string[] {
 async function callNvidia(prompt: string): Promise<string> {
   const key = process.env.NVIDIA_API_KEY?.trim();
   if (!key) throw new Error("NVIDIA_API_KEY missing");
-  const res = await fetch(`${NVIDIA_BASE}/chat/completions`, {
+  const res = await fetch(`${nvidiaBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
@@ -56,7 +47,7 @@ async function callNvidia(prompt: string): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: NVIDIA_MODEL,
+      model: nvidiaModel(),
       temperature: 0.2,
       max_tokens: 2500,
       stream: false,
