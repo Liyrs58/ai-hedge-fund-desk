@@ -15,7 +15,7 @@ npm run dev
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
-No `.env` file is required. The click-through is **client-side paper**: mock LLM, sample marks, local book/blotter. Run a name, veto, or approve without a network call.
+No `.env` file is required. The click-through is **client-side paper**: mock LLM, sample marks if Yahoo is blocked, book/blotter in `localStorage`. Run a name, veto, or approve without a network call. `LIVE_TRADING` is always **false** — there is no broker path.
 
 ```bash
 npm run build    # production compile — must pass
@@ -44,30 +44,30 @@ npx vercel
 
 Production build command is `npm run build`. `package-lock.json` is a normal `npm install` lockfile. There is **no** GitHub Action that assembles or patches the lockfile.
 
-Optional LLM keys (see below) can be added later in the Vercel project **Settings → Environment Variables**. They only rewrite debate wording.
+The only optional env is **`NVIDIA_API_KEY`** (free NVIDIA NIM). Do not set OpenAI or Anthropic keys — this desk does not call paid LLM APIs.
 
-## Optional: live marks
+## Marks: LIVE vs SAMPLE
 
-**Refresh marks** (strip, next to Reset book) asks Yahoo Finance for last / change / volume / spark on the six names. No Yahoo key.
+On load, and on **Refresh marks**, the desk asks Yahoo Finance (no key) for last / change / volume / spark on the six names.
 
-- Success: header marks update; the next **Run desk** uses those last prices. Footer reads `DATA: YAHOO+PAPER`. PE, RSI, MACD, IV, beta stay paper so the teaching path stays deterministic.
-- Failure (blocked network, timeout, empty payload): sample marks stay on the tape. Footer explains. Offline **Run desk** is unchanged — the button is the only Yahoo call.
-- **Reset book** restores sample marks as well as the seed book.
+- Success: masthead badge **LIVE**. Next **Run desk** uses those last prices. PE, RSI, MACD, IV, beta stay paper.
+- Failure (blocked network, timeout, empty payload): badge **SAMPLE**. Sample closes stay on the tape. Offline **Run desk** still works.
+- **Reset book** restores the seed book, sample marks, and the SAMPLE badge.
 
-## Optional: LLM rewrite
+## Optional: NVIDIA NIM (free)
 
-Copy `.env.example` to `.env.local` only if you want live prose.
+Copy `.env.example` to `.env.local` only if you want live prose. Get a key at [build.nvidia.com/settings](https://build.nvidia.com/settings). Hosted NIM is OpenAI-compatible at `https://integrate.api.nvidia.com/v1` ([LLM APIs](https://docs.api.nvidia.com/nim/reference/llm-apis)).
 
 | Env | Required? | What it does |
 | --- | --- | --- |
-| *(none)* | Default | Deterministic mock pipeline. Desk runs offline. |
-| `LLM_PROVIDER=mock` | Optional | Force the mock even if other keys are set. |
-| `LLM_PROVIDER=openai` + `OPENAI_API_KEY` | Optional | Rewrite debate bodies via OpenAI. |
-| `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` | Optional | Same, Anthropic. |
-| `LLM_PROVIDER=gemini` + `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Optional | Same, Gemini. |
-| `LLM_PROVIDER=grok` + `XAI_API_KEY` | Optional | Same, xAI. |
+| *(none)* | Default | Deterministic mock pipeline. Badge **MOCK**. Desk runs offline. |
+| `NVIDIA_API_KEY` | Optional | Rewrite debate *wording* via NIM. Badge **NVIDIA**. |
+| `NVIDIA_MODEL` | Optional | Default `meta/llama-3.1-8b-instruct` (listed on NVIDIA's LLM catalog). |
+| `NVIDIA_BASE_URL` | Optional | Default `https://integrate.api.nvidia.com/v1`. |
+| `LLM_PROVIDER=mock` | Optional | Force mock even if `NVIDIA_API_KEY` is set. |
+| `LIVE_TRADING=false` | Always | Paper fills only. Setting this to true does nothing. |
 
-A live call that fails falls back to mock prose; the footer reads `FALLBACK MOCK`. Ticket size, risk verdict, and fills are never taken from the model.
+A NIM call that fails falls back to mock prose; the badge reads **FALLBACK MOCK**. Ticket size, risk verdict, and fills are never taken from the model. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are ignored.
 
 There is no broker, no order router, and no paid market-data vendor. Book and blotter persist in `localStorage`.
 
@@ -81,10 +81,10 @@ There is no broker, no order router, and no paid market-data vendor. Book and bl
 
 **Stubbed:**
 
-- Default quotes are sample closes as-of 18 Sep 2026 (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`). **Refresh marks** may overlay Yahoo last/change/volume; fundamentals and vol stay paper.
+- Quotes default to sample closes as-of 18 Sep 2026 (`NVDA` `AAPL` `MSFT` `TSLA` `JPM` `XOM`) when Yahoo does not answer. LIVE overlay is last/change/volume/spark only; fundamentals and vol stay paper.
 - The news wire is a deterministic paper file (`src/lib/desk/news.ts`), not a news API.
-- Debate *wording* is rendered from structured claims when no LLM key is set. A live LLM may rewrite wording only.
-- Fills never hit an exchange. P&L is mark-to-book on the marks on the tape.
+- Debate *wording* is rendered from structured claims when `NVIDIA_API_KEY` is unset (MOCK). NIM may rewrite wording only.
+- Fills never hit an exchange (`LIVE_TRADING=false`). P&L is mark-to-book on the marks on the tape.
 
 ## Desk
 
@@ -120,10 +120,12 @@ Every control below must work with `npm run dev` and no `.env` keys.
 | **NAME** chips | Strip under DESK | Selects the name. Mark in the masthead updates. Switching names clears the tape. |
 | **PACE → Stream / Instant** | Strip | Stream plays one mark at a time. Instant dumps the full tape. |
 | **VIEW → Floor / Tabs** | Strip | Three panes, or Desk / Transcript / Ticket tabs. |
-| **Run desk** | Strip | Starts the mock debate. No network. Click again to re-run. |
-| **Refresh marks** | Strip | Optional Yahoo last. On failure, sample marks stay. Does not run the desk. |
-| **Reset book** | Strip | Seed book + sample marks + seed blotter; clears the tape. |
-| **Veto / Approve** | Ticket | Veto leaves the book. Approve fills at slip+fee. |
+| **Run desk** | Strip | Starts the mock debate with no key (no network). With `NVIDIA_API_KEY`, wording may come from NIM. |
+| **Refresh marks** | Strip | Yahoo last. On failure, SAMPLE marks stay. Does not run the desk. |
+| **Reset book** | Strip | Seed book + SAMPLE marks + seed blotter; persists to `localStorage`. |
+| **Veto / Approve** | Ticket | Veto leaves the book. Approve paper-fills at slip+fee. Never live. |
+| **LIVE / SAMPLE** | Masthead | LIVE after Yahoo last. SAMPLE on fallback or after Reset book. |
+| **MOCK / NVIDIA** | Masthead | MOCK with no key. NVIDIA when NIM rewrote wording. |
 
 ## Citations
 
