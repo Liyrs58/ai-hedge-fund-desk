@@ -1,9 +1,10 @@
-/**
- * This desk is paper-only. LIVE_TRADING is documented as false and cannot
- * enable a broker, even if someone sets the env to true.
- */
-export function isLiveTrading(): boolean {
-  return false;
-}
-
-export const LIVE_TRADING = false;
+export {
+  LIVE_TRADING,
+  NVIDIA_BASE_URL,
+  NVIDIA_MODEL,
+  isLiveTrading,
+  nvidiaBaseUrl,
+  nvidiaModel,
+  paperBroker,
+} from "./flags";
+export type { PaperBrokerId } from "./flags";

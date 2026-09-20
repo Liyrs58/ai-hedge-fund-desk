@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# desk json store (runtime)
+/data/*.json
+!/data/.gitkeep
+
 # vercel
 .vercel
 
