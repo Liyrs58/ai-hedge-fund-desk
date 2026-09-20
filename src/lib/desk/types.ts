@@ -160,6 +160,8 @@ export interface SessionPayload {
   quoteSource: QuoteSource;
   marksNote: string | null;
   liveTrading: false;
+  paperBroker: "off";
+  llmModel: string;
   book: Book;
   blotter: Ticket[];
   limits: RiskLimits;

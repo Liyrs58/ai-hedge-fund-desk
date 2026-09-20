@@ -3,6 +3,8 @@
 import { fmtPct, fmtPx, type Quote, type QuoteSource } from "@/lib/desk";
 import { SessionClock } from "./session-clock";
 
+export type LlmBadge = "MOCK" | "NVIDIA/google/gemma-4-31b-it" | "FALLBACK MOCK";
+
 export function DeskHeader({
   quote,
   quoteSource,
@@ -10,7 +12,7 @@ export function DeskHeader({
 }: {
   quote: Quote;
   quoteSource: QuoteSource;
-  llm: "MOCK" | "NVIDIA" | "FALLBACK MOCK";
+  llm: LlmBadge;
 }) {
   const marks = quoteSource === "yahoo" ? "LIVE" : "SAMPLE";
   return (
@@ -27,7 +29,7 @@ export function DeskHeader({
           <Badge qa="badge-marks" tone={marks === "LIVE" ? "live" : "sample"}>
             {marks}
           </Badge>
-          <Badge qa="badge-llm" tone={llm === "NVIDIA" ? "live" : "sample"}>
+          <Badge qa="badge-llm" tone={llm.startsWith("NVIDIA") ? "live" : "sample"}>
             {llm}
           </Badge>
           <Badge qa="badge-trading" tone="sample">
