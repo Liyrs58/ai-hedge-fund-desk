@@ -16,16 +16,18 @@ import {
   buildMockRun,
   cloneBook,
   fillTicket,
-  getQuote,
   markBook,
   normalizeBook,
   padSession,
   priceTicket,
+  UNIVERSE,
   withPeak,
   type AgentId,
   type Book,
   type DebateMessage,
   type DeskRun,
+  type Quote,
+  type QuoteSource,
   type SessionPayload,
   type Ticket,
 } from "@/lib/desk";
@@ -44,17 +46,23 @@ function lgSnapshot() {
 }
 
 export function DeskApp({ session }: { session: SessionPayload }) {
-  const quotes = session.quotes;
+  const seedQuotes = session.quotes.length ? session.quotes : UNIVERSE;
+  const [quotes, setQuotes] = useState<Quote[]>(seedQuotes);
+  const [quoteSource, setQuoteSource] = useState<QuoteSource>(
+    session.quoteSource ?? "sample",
+  );
+  const [marksBusy, setMarksBusy] = useState(false);
+  const [marksNote, setMarksNote] = useState<string | null>(null);
   const quoteMap = useMemo(
     () => Object.fromEntries(quotes.map((q) => [q.symbol, q])),
     [quotes],
   );
   const seedBook = useMemo(
-    () => withPeak(attachSectors(cloneBook(session.book), quotes), quotes),
-    [quotes, session.book],
+    () => withPeak(attachSectors(cloneBook(session.book), seedQuotes), seedQuotes),
+    [seedQuotes, session.book],
   );
 
-  const [ticker, setTicker] = useState(quotes[0]?.symbol ?? "NVDA");
+  const [ticker, setTicker] = useState(seedQuotes[0]?.symbol ?? "NVDA");
   const [bookRaw, setBook] = usePersisted<Book>(BOOK_KEY, seedBook);
   const book = useMemo(() => normalizeBook(bookRaw), [bookRaw]);
   const [blotter, setBlotter] = usePersisted<Ticket[]>(BLOTTER_KEY, session.blotter);
@@ -73,7 +81,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     return () => clearInterval(id);
   }, []);
 
-  const quote = quoteMap[ticker] ?? quotes[0];
+  const quote = quoteMap[ticker] ?? quotes[0] ?? UNIVERSE[0];
   const exposure = useMemo(() => markBook(book, quotes), [book, quotes]);
   const playing = !!run && cursor < run.messages.length;
   const messages = useMemo(
@@ -111,7 +119,11 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     try {
       setError(null);
       setFocus(null);
-      const q = getQuote(ticker);
+      const q = quoteMap[ticker] ?? quotes[0];
+      if (!q) {
+        setError("No mark on the tape for that name.");
+        return;
+      }
       const built = buildMockRun(
         ticker,
         q,
@@ -142,7 +154,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         err instanceof Error ? err.message : "Desk failed to open the tape.",
       );
     }
-  }, [ticker, book, quotes, pace]);
+  }, [ticker, book, quotes, quoteMap, pace]);
 
   const skipToMark = useCallback(() => {
     if (!run) return;
@@ -182,11 +194,44 @@ export function DeskApp({ session }: { session: SessionPayload }) {
   const resetBook = useCallback(() => {
     setBook(seedBook);
     setBlotter(session.blotter);
+    setQuotes(seedQuotes);
+    setQuoteSource("sample");
+    setMarksNote(null);
     setRun(null);
     setCursor(0);
     setFocus(null);
     setError(null);
-  }, [seedBook, session.blotter, setBook, setBlotter]);
+  }, [seedBook, seedQuotes, session.blotter, setBook, setBlotter]);
+
+  const refreshMarks = useCallback(async () => {
+    setMarksBusy(true);
+    try {
+      const res = await fetch("/api/desk/quotes", { cache: "no-store" });
+      const data = (await res.json()) as {
+        source?: QuoteSource;
+        quotes?: Quote[];
+        note?: string;
+      };
+      if (Array.isArray(data.quotes) && data.quotes.length > 0) {
+        setQuotes(data.quotes);
+        setQuoteSource(data.source === "yahoo" ? "yahoo" : "sample");
+        setMarksNote(
+          data.source === "yahoo"
+            ? null
+            : (data.note ?? "Yahoo did not answer. Sample marks still on the tape."),
+        );
+        setRun(null);
+        setCursor(0);
+        setError(null);
+      } else {
+        setMarksNote("Yahoo did not answer. Sample marks still on the tape.");
+      }
+    } catch {
+      setMarksNote("Yahoo did not answer. Sample marks still on the tape.");
+    } finally {
+      setMarksBusy(false);
+    }
+  }, []);
 
   const pane = (
     <AgentRoster
@@ -308,6 +353,8 @@ export function DeskApp({ session }: { session: SessionPayload }) {
         onRun={startRun}
         onSkip={skipToMark}
         onReset={resetBook}
+        onRefreshMarks={() => void refreshMarks()}
+        marksBusy={marksBusy}
       />
 
       <div className="flex min-h-0 flex-1 flex-col border-y border-ink">
@@ -320,7 +367,10 @@ export function DeskApp({ session }: { session: SessionPayload }) {
           <LiveDot />
           <span className="text-copper">LIVE</span>
         </span>
-        <span>DATA: PAPER</span>
+        <span>
+          DATA: {quoteSource === "yahoo" ? "YAHOO+PAPER" : "PAPER"}
+          {marksNote ? <span className="ml-2 text-mute">{marksNote}</span> : null}
+        </span>
         <span>LLM: {llmLabel}</span>
         <span>MARKET: {marketLabel(now)}</span>
         <span>LATENCY: 6ms</span>
