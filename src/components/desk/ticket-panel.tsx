@@ -102,7 +102,8 @@ export function PositionTicket({
               value={workingShares ? `${fmtUsd(notional)} (est.)` : "\u2014"}
             />
           </div>
- mar          <div className="border-b border-t border-ink px-4 py-3">
+
+          <div className="border-b border-t border-ink px-4 py-3">
             <div className="font-mono text-[10px] tracking-[0.16em] text-mute uppercase">
               Thesis (excerpt)
             </div>
