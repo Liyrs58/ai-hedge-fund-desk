@@ -17,6 +17,7 @@ import {
   fillTicket,
   markBook,
   normalizeBook,
+  NVIDIA_TIMEOUT_MS,
   padSession,
   priceTicket,
   SEED_BLOTTER,
@@ -214,6 +215,7 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     setFocus(null);
 
     const applyRun = (next: DeskRun) => {
+      setError(null);
       setRun(next);
       setCursor(
         pace === "instant"
@@ -256,12 +258,14 @@ export function DeskApp({ session }: { session: SessionPayload }) {
     }
 
     setRunBusy(true);
+    setError("Waiting on NVIDIA NIM. Cold start can take ~2 min.");
     void (async () => {
       try {
         const res = await fetch("/api/desk/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
+          signal: AbortSignal.timeout(NVIDIA_TIMEOUT_MS),
           body: JSON.stringify({ ticker: q.symbol, book, quotes }),
         });
         const data = (await res.json()) as DeskRun & { error?: string };
