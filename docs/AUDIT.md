@@ -1,7 +1,7 @@
 # Quant audit — AHF Desk 04 (paper)
 
-**As of:** 21 Sep 2026 (Europe/London)  
-**Checkout:** `/workspace/ai-hedge-fund-desk` · branch `quant/audit-hardening-2026-09`  
+**As of:** 21 Sep 2026 (Europe/London)
+**Branch reviewed:** `quant/audit-hardening-2026-09`
 **Scope:** honesty of risk metrics, mark/fundamentals provenance, risk engine, agent claims, tests/CI.
 
 This audit is descriptive of the pre-hardening codebase; Phase 2 remediations are tracked in the same PR.
