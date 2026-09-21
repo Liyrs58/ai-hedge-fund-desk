@@ -1,5 +1,7 @@
+import { sampleProvenance } from "./provenance";
 import { roundPx } from "./signals";
-import type { Quote } from "./types";
+import { computeTechnicals } from "./technicals";
+import type { Quote, QuoteProvenance } from "./types";
 
 /** Last / change / volume overlay from Yahoo or any other mark source. */
 export interface MarkSnap {
@@ -9,6 +11,8 @@ export interface MarkSnap {
   changePct: number;
   volumeM: number;
   spark: number[];
+  closes?: number[];
+  asOf?: string;
 }
 
 function walk(seed: number, start: number, n = 24): number[] {
@@ -25,8 +29,12 @@ function walk(seed: number, start: number, n = 24): number[] {
   return out;
 }
 
+function withSampleProvenance(q: Omit<Quote, "provenance">): Quote {
+  return { ...q, provenance: sampleProvenance() };
+}
+
 export const UNIVERSE: Quote[] = [
-  {
+  withSampleProvenance({
     symbol: "NVDA",
     name: "NVIDIA CORP",
     sector: "Technology",
@@ -45,8 +53,8 @@ export const UNIVERSE: Quote[] = [
     beta: 1.72,
     mktCapB: 4370,
     spark: walk(11, 178.42),
-  },
-  {
+  }),
+  withSampleProvenance({
     symbol: "AAPL",
     name: "APPLE INC",
     sector: "Technology",
@@ -65,8 +73,8 @@ export const UNIVERSE: Quote[] = [
     beta: 1.18,
     mktCapB: 3380,
     spark: walk(23, 228.15),
-  },
-  {
+  }),
+  withSampleProvenance({
     symbol: "MSFT",
     name: "MICROSOFT CORP",
     sector: "Technology",
@@ -85,8 +93,8 @@ export const UNIVERSE: Quote[] = [
     beta: 0.92,
     mktCapB: 3190,
     spark: walk(41, 428.7),
-  },
-  {
+  }),
+  withSampleProvenance({
     symbol: "TSLA",
     name: "TESLA INC",
     sector: "Consumer",
@@ -105,8 +113,8 @@ export const UNIVERSE: Quote[] = [
     beta: 2.11,
     mktCapB: 776,
     spark: walk(59, 241.8),
-  },
-  {
+  }),
+  withSampleProvenance({
     symbol: "JPM",
     name: "JPMORGAN CHASE",
     sector: "Financials",
@@ -125,8 +133,8 @@ export const UNIVERSE: Quote[] = [
     beta: 1.08,
     mktCapB: 612,
     spark: walk(73, 214.33),
-  },
-  {
+  }),
+  withSampleProvenance({
     symbol: "XOM",
     name: "EXXON MOBIL",
     sector: "Energy",
@@ -145,7 +153,7 @@ export const UNIVERSE: Quote[] = [
     beta: 0.88,
     mktCapB: 508,
     spark: walk(89, 118.9),
-  },
+  }),
 ];
 
 export const QUOTE_BY_SYMBOL: Record<string, Quote> = Object.fromEntries(
@@ -165,14 +173,44 @@ export function overlayQuotes(base: Quote[], snaps: MarkSnap[]): Quote[] {
   return base.map((q) => {
     const snap = map[q.symbol];
     if (!snap || snap.mark <= 0) return q;
-    return {
+    const asOf = snap.asOf ?? new Date().toISOString();
+    const tech = snap.closes?.length
+      ? computeTechnicals(snap.closes)
+      : null;
+    const provenance: QuoteProvenance = {
+      mark: { source: "yahoo", asOf },
+      fundamentals: { ...q.provenance.fundamentals },
+      technicals:
+        tech && tech.ok
+          ? { source: "computed", asOf }
+          : { ...q.provenance.technicals },
+      news: { ...q.provenance.news },
+    };
+    const next: Quote = {
       ...q,
       mark: snap.mark,
       change: snap.change,
       changePct: snap.changePct,
       volumeM: snap.volumeM > 0 ? snap.volumeM : q.volumeM,
-      spark: snap.spark.length >= 8 ? snap.spark : [...q.spark.slice(0, -1), snap.mark].map(roundPx),
+      spark:
+        snap.spark.length >= 8
+          ? snap.spark
+          : [...q.spark.slice(0, -1), snap.mark].map(roundPx),
+      provenance,
     };
+    if (tech) {
+      next.rsi14 = tech.rsi14;
+      next.macdHist = tech.macdHist;
+      if (tech.sma50 > 0) next.sma50 = tech.sma50;
+      if (tech.sma200 > 0) next.sma200 = tech.sma200;
+      if (!tech.ok) {
+        next.provenance = {
+          ...provenance,
+          technicals: { source: "computed", asOf },
+        };
+      }
+    }
+    return next;
   });
 }
 

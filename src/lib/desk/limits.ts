@@ -5,7 +5,7 @@ export const RISK_LIMITS: RiskLimits = {
   singleNamePct: 25,
   sectorPct: 40,
   shortPct: 15,
-  dailyVar: 40_000,
+  dailyRiskProxy: 40_000,
   maxDrawdownPct: 8,
 };
 

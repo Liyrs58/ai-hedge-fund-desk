@@ -46,7 +46,7 @@ export function BookPanel({
         <Stat label="Cash" value={fmtUsd(book.cash)} />
         <Stat label="Gross" value={`${exposure.grossPct.toFixed(1)}%`} />
         <Stat label="Net" value={`${exposure.netPct.toFixed(1)}%`} />
-        <Stat label="VaR" value={fmtUsd(exposure.dailyVar)} />
+        <Stat label="RiskProxy" value={fmtUsd(exposure.dailyRiskProxy)} />
       </div>
       <div className="desk-scroll min-h-0 flex-1 overflow-auto">
         <table className="w-full font-mono text-[11px]">

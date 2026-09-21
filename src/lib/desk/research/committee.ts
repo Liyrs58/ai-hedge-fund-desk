@@ -50,7 +50,7 @@ export function runCommittee(board: Blackboard): CommitteeVote[] {
   );
 
   let conservativeSize = roundHalf(sizePct * 0.7);
-  let conservativeSide: Side = side;
+  const conservativeSide: Side = side;
   let conservativeReason = `Haircut to ${n1(conservativeSize)}%. IV ${n1(f.iv30)}, DD ${n1(f.drawdownPct)}%.`;
   if (f.iv30 > 55) {
     conservativeSize = roundHalf(sizePct * 0.55);

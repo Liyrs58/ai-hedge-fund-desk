@@ -47,7 +47,8 @@ export function markBook(
   const namePct: Record<string, number> = {};
   let long = 0;
   let short = 0;
-  let absVar = 0;
+  /** Vol-weighted exposure proxy: Σ |value| × (iv30/100) × 0.06 — not VaR. */
+  let riskProxyTotal = 0;
 
   for (const pos of book.positions) {
     const quote = map[pos.ticker];
@@ -55,7 +56,7 @@ export function markBook(
     const value = pos.shares * mark;
     if (value >= 0) long += value;
     else short += Math.abs(value);
-    absVar += Math.abs(value) * ((quote?.iv30 ?? 25) / 100) * 0.06;
+    riskProxyTotal += Math.abs(value) * ((quote?.iv30 ?? 25) / 100) * 0.06;
     namePct[pos.ticker] = value;
     const sector = quote?.sector ?? pos.sector;
     sectorPct[sector] = (sectorPct[sector] ?? 0) + value;
@@ -83,7 +84,7 @@ export function markBook(
     shortPct: toPct(short),
     sectorPct: sectorPctOut,
     namePct: namePctOut,
-    dailyVar: absVar,
+    dailyRiskProxy: riskProxyTotal,
   };
 }
 
@@ -146,6 +147,15 @@ export function fillTicket(book: Book, ticket: Ticket, quote?: Quote): Book {
     return next;
   }
 
+  // Only an increase in the same direction changes the weighted average
+  // entry price. Reducing a long or covering a short realizes part of the
+  // position, but the remaining shares keep their original cost basis.
+  if (Math.sign(existing.shares) !== Math.sign(signedShares)) {
+    existing.shares = newShares;
+    existing.sector = sector;
+    return next;
+  }
+
   const oldValue = existing.shares * existing.avg;
   const addValue = signedShares * px;
   existing.shares = newShares;
@@ -172,8 +182,8 @@ export function limitBreaches(exposure: Exposure): string[] {
   if (exposure.shortPct > RISK_LIMITS.shortPct) {
     out.push(`Short ${exposure.shortPct.toFixed(1)}% > ${RISK_LIMITS.shortPct}%`);
   }
-  if (exposure.dailyVar > RISK_LIMITS.dailyVar) {
-    out.push(`VaR ${Math.round(exposure.dailyVar)} > ${RISK_LIMITS.dailyVar}`);
+  if (exposure.dailyRiskProxy > RISK_LIMITS.dailyRiskProxy) {
+    out.push(`RiskProxy ${Math.round(exposure.dailyRiskProxy)} > ${RISK_LIMITS.dailyRiskProxy}`);
   }
   if (exposure.drawdownPct > RISK_LIMITS.maxDrawdownPct) {
     out.push(

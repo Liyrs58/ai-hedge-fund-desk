@@ -29,7 +29,7 @@ export interface Features {
   cash: number;
   grossPct: number;
   shortPct: number;
-  dailyVar: number;
+  dailyRiskProxy: number;
   drawdownPct: number;
   peakNav: number;
   newsPolarity: number;
@@ -89,7 +89,7 @@ export function extractFeatures(
     cash: book.cash,
     grossPct: exposure.grossPct,
     shortPct: exposure.shortPct,
-    dailyVar: exposure.dailyVar,
+    dailyRiskProxy: exposure.dailyRiskProxy,
     drawdownPct: exposure.drawdownPct,
     peakNav: exposure.peakNav,
     newsPolarity: newsPolarity(newsFor(quote.symbol)),

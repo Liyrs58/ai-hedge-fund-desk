@@ -8,7 +8,7 @@ const DISPLAY = [
   "Position limit",
   "Liquidity (ADV)",
   "Factor exposure",
-  "Portfolio VaR",
+  "Vol-weighted risk",
 ] as const;
 
 export function buildRiskChecks(
@@ -43,7 +43,7 @@ export function buildRiskChecks(
     (exposure.sectorPct[quote.sector] ?? 0) + (quote.sector ? signed : 0),
   );
   const bump = ticket.proposedShares * ticket.mark * (quote.iv30 / 100) * 0.06;
-  const nextVar = exposure.dailyVar + bump;
+  const nextProxy = exposure.dailyRiskProxy + bump;
   const advShares = quote.avgVolumeM * 1_000_000;
   const bpOfAdv =
     advShares > 0 ? (ticket.proposedShares / advShares) * 10_000 : 0;
@@ -71,10 +71,10 @@ export function buildRiskChecks(
       detail: `${quote.sector} ${nextSector.toFixed(1)}%.`,
     },
     {
-      id: "VAR",
-      label: "Portfolio VaR",
-      flag: nextVar > 22_000 ? "WARNING" : "OK",
-      detail: `VaR ${Math.round(nextVar)}.`,
+      id: "RISK_PROXY",
+      label: "Vol-weighted risk",
+      flag: nextProxy > 22_000 ? "WARNING" : "OK",
+      detail: `RiskProxy ${Math.round(nextProxy)}.`,
     },
   ];
 }
