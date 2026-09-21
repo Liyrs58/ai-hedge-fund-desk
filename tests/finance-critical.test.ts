@@ -11,16 +11,19 @@ import {
   canFill,
   cloneBook,
   fillTicket,
+  limitBreaches,
   markBook,
+  positionPnl,
   SEED_BOOK,
   sharesForPct,
 } from "../src/lib/desk/book";
 import { priceTicket, quoteFill } from "../src/lib/desk/execution";
-import { FEE_BPS, RISK_LIMITS, STARTING_NAV } from "../src/lib/desk/limits";
+import { FEE_BPS, MIN_TRADE_PCT, RISK_LIMITS, STARTING_NAV } from "../src/lib/desk/limits";
 import { evaluateTicket } from "../src/lib/desk/risk-engine";
 import { isLiveTrading, LIVE_TRADING } from "../src/lib/desk/flags";
 import { UNIVERSE, getQuote } from "../src/lib/desk/universe";
 import { computeTechnicals, rsiWilder } from "../src/lib/desk/technicals";
+import { formatProvenanceBadge } from "../src/lib/desk/provenance";
 import type { Book, Ticket } from "../src/lib/desk/types";
 
 function blankTicket(partial: Partial<Ticket> & Pick<Ticket, "ticker" | "side" | "shares">): Ticket {
@@ -126,6 +129,27 @@ describe("drawdown veto", () => {
     assert.equal(verdict.decision, "veto");
     assert.equal(verdict.shares, 0);
   });
+
+  it("allows a sell that reduces a long while the book is in drawdown", () => {
+    const quote = getQuote("AAPL");
+    const book: Book = {
+      cash: 500_000,
+      positions: [{ ticker: "AAPL", shares: 800, avg: quote.mark, sector: quote.sector }],
+      peakNav: STARTING_NAV,
+    };
+    const exp = markBook(book, UNIVERSE);
+    assert.ok(exp.drawdownPct > RISK_LIMITS.maxDrawdownPct);
+    const verdict = evaluateTicket(
+      { side: "SELL", sizePct: 4, shares: 120 },
+      book,
+      quote,
+      UNIVERSE,
+      exp,
+    );
+    assert.equal(verdict.vetoed, false);
+    assert.equal(verdict.side, "SELL");
+    assert.ok(verdict.shares > 0);
+  });
 });
 
 describe("short limit", () => {
@@ -190,6 +214,26 @@ describe("sector limit", () => {
     } else {
       assert.equal(verdict.shares, 0);
     }
+  });
+});
+
+describe("risk limit boundaries", () => {
+  it("allows exposure exactly at every configured hard limit", () => {
+    assert.deepEqual(
+      limitBreaches({
+        nav: STARTING_NAV,
+        peakNav: STARTING_NAV,
+        drawdownPct: RISK_LIMITS.maxDrawdownPct,
+        grossPct: RISK_LIMITS.grossPct,
+        netPct: 0,
+        longPct: 65,
+        shortPct: RISK_LIMITS.shortPct,
+        sectorPct: { Technology: RISK_LIMITS.sectorPct },
+        namePct: { AAPL: RISK_LIMITS.singleNamePct },
+        dailyRiskProxy: RISK_LIMITS.dailyRiskProxy,
+      }),
+      [],
+    );
   });
 });
 
@@ -279,6 +323,39 @@ describe("close and reverse", () => {
     assert.equal(next.shares, -50);
     assert.equal(next.avg, fillPx);
   });
+
+  it("preserves average cost when reducing a long or covering a short", () => {
+    const quote = getQuote("JPM");
+    const long: Book = {
+      cash: 0,
+      positions: [{ ticker: "JPM", shares: 10, avg: 100, sector: quote.sector }],
+      peakNav: STARTING_NAV,
+    };
+    const reducedLong = fillTicket(
+      long,
+      blankTicket({ ticker: "JPM", side: "SELL", shares: 4, fillPx: 120, sector: quote.sector }),
+      quote,
+    );
+    const remainingLong = reducedLong.positions[0]!;
+    assert.equal(remainingLong.shares, 6);
+    assert.equal(remainingLong.avg, 100);
+    assert.equal(positionPnl(remainingLong, 130), 180);
+
+    const short: Book = {
+      cash: 0,
+      positions: [{ ticker: "JPM", shares: -10, avg: 100, sector: quote.sector }],
+      peakNav: STARTING_NAV,
+    };
+    const coveredShort = fillTicket(
+      short,
+      blankTicket({ ticker: "JPM", side: "BUY", shares: 4, fillPx: 80, sector: quote.sector }),
+      quote,
+    );
+    const remainingShort = coveredShort.positions[0]!;
+    assert.equal(remainingShort.shares, -6);
+    assert.equal(remainingShort.avg, 100);
+    assert.equal(positionPnl(remainingShort, 80), 120);
+  });
 });
 
 describe("no fill after veto", () => {
@@ -297,6 +374,66 @@ describe("no fill after veto", () => {
     const after = fillTicket(book, ticket, quote);
     assert.equal(after.cash, book.cash);
     assert.equal(after.positions.length, book.positions.length);
+  });
+});
+
+describe("minimum trade size", () => {
+  it("vetoes a sub-minimum ticket without changing the book", () => {
+    const quote = getQuote("TSLA");
+    const book = cloneBook(SEED_BOOK);
+    const before = cloneBook(book);
+    const exp = markBook(book, UNIVERSE);
+    const sizePct = MIN_TRADE_PCT - 0.1;
+    const verdict = evaluateTicket(
+      { side: "BUY", sizePct, shares: sharesForPct(exp.nav, sizePct, quote.mark) },
+      book,
+      quote,
+      UNIVERSE,
+      exp,
+    );
+    assert.equal(verdict.vetoed, true);
+    assert.equal(verdict.shares, 0);
+    assert.deepEqual(book, before);
+  });
+});
+
+describe("short-side position accounting", () => {
+  it("opens a short, adds, covers while preserving basis, then flips long", () => {
+    const quote = getQuote("JPM");
+    const flat: Book = { cash: 10_000, positions: [], peakNav: STARTING_NAV };
+    const opened = fillTicket(
+      flat,
+      blankTicket({ ticker: "JPM", side: "SELL", shares: 10, fillPx: 100, feeUsd: 0 }),
+      quote,
+    );
+    assert.equal(opened.positions[0]?.shares, -10);
+    assert.equal(opened.positions[0]?.avg, 100);
+    assert.equal(opened.cash, 11_000);
+
+    const added = fillTicket(
+      opened,
+      blankTicket({ ticker: "JPM", side: "SELL", shares: 5, fillPx: 110, feeUsd: 0 }),
+      quote,
+    );
+    assert.equal(added.positions[0]?.shares, -15);
+    assert.ok(Math.abs((added.positions[0]?.avg ?? 0) - (1_000 + 550) / 15) < 1e-9);
+
+    const covered = fillTicket(
+      added,
+      blankTicket({ ticker: "JPM", side: "BUY", shares: 6, fillPx: 80, feeUsd: 0 }),
+      quote,
+    );
+    assert.equal(covered.positions[0]?.shares, -9);
+    assert.equal(covered.positions[0]?.avg, added.positions[0]?.avg);
+    assert.ok(positionPnl(covered.positions[0]!, 80) > 0);
+
+    const flipped = fillTicket(
+      covered,
+      blankTicket({ ticker: "JPM", side: "BUY", shares: 10, fillPx: 80, feeUsd: 0 }),
+      quote,
+    );
+    assert.equal(flipped.positions[0]?.shares, 1);
+    assert.equal(flipped.positions[0]?.avg, 80);
   });
 });
 
@@ -335,13 +472,17 @@ describe("provenance on sample universe", () => {
       assert.equal(q.provenance.mark.source, "sample");
       assert.equal(q.provenance.fundamentals.source, "sample");
       assert.equal(q.provenance.technicals.source, "sample");
-      assert.equal(q.provenance.news.source, "wire");
+      assert.equal(q.provenance.news.source, "sample");
       assert.ok(q.provenance.mark.asOf.length > 0);
     }
   });
 });
 
 describe("technicals from history", () => {
+  it("uses Wilder smoothing across the full price history", () => {
+    assert.ok(Math.abs(rsiWilder([1, 2, 3, 2, 3, 2, 3], 3)! - 67.9) < 0.1);
+  });
+
   it("computes RSI and SMAs when given enough synthetic closes", () => {
     const closes: number[] = [];
     let x = 100;
@@ -356,6 +497,15 @@ describe("technicals from history", () => {
     assert.equal(tech!.ok, true);
     assert.ok(tech!.sma50 > 0);
     assert.ok(tech!.sma200 > 0);
+  });
+});
+
+describe("timestamp provenance", () => {
+  it("shows the UTC timezone on Yahoo timestamps", () => {
+    assert.equal(
+      formatProvenanceBadge({ source: "yahoo", asOf: "2026-09-21T12:34:56.000Z" }),
+      "YAHOO · 2026-09-21 12:34 UTC",
+    );
   });
 });
 

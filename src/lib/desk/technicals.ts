@@ -19,13 +19,20 @@ export function rsiWilder(closes: number[], period = 14): number | null {
   if (closes.length < period + 1) return null;
   let gains = 0;
   let losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
+  for (let i = 1; i <= period; i++) {
     const d = closes[i]! - closes[i - 1]!;
     if (d >= 0) gains += d;
     else losses -= d;
   }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i]! - closes[i - 1]!;
+    const gain = Math.max(d, 0);
+    const loss = Math.max(-d, 0);
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);

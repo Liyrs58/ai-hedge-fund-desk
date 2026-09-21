@@ -48,7 +48,7 @@ export function markBook(
   let long = 0;
   let short = 0;
   /** Vol-weighted exposure proxy: Σ |value| × (iv30/100) × 0.06 — not VaR. */
-  let absVar = 0;
+  let riskProxyTotal = 0;
 
   for (const pos of book.positions) {
     const quote = map[pos.ticker];
@@ -56,7 +56,7 @@ export function markBook(
     const value = pos.shares * mark;
     if (value >= 0) long += value;
     else short += Math.abs(value);
-    absVar += Math.abs(value) * ((quote?.iv30 ?? 25) / 100) * 0.06;
+    riskProxyTotal += Math.abs(value) * ((quote?.iv30 ?? 25) / 100) * 0.06;
     namePct[pos.ticker] = value;
     const sector = quote?.sector ?? pos.sector;
     sectorPct[sector] = (sectorPct[sector] ?? 0) + value;
@@ -84,7 +84,7 @@ export function markBook(
     shortPct: toPct(short),
     sectorPct: sectorPctOut,
     namePct: namePctOut,
-    dailyRiskProxy: absVar,
+    dailyRiskProxy: riskProxyTotal,
   };
 }
 
@@ -142,6 +142,15 @@ export function fillTicket(book: Book, ticket: Ticket, quote?: Quote): Book {
 
   if (existing.shares === 0 || Math.sign(existing.shares) !== Math.sign(newShares)) {
     existing.avg = px;
+    existing.shares = newShares;
+    existing.sector = sector;
+    return next;
+  }
+
+  // Only an increase in the same direction changes the weighted average
+  // entry price. Reducing a long or covering a short realizes part of the
+  // position, but the remaining shares keep their original cost basis.
+  if (Math.sign(existing.shares) !== Math.sign(signedShares)) {
     existing.shares = newShares;
     existing.sector = sector;
     return next;

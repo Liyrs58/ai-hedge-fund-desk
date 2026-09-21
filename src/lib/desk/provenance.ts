@@ -15,7 +15,7 @@ export function sampleProvenance(): QuoteProvenance {
     mark: { ...row },
     fundamentals: { ...row },
     technicals: { ...row },
-    news: { source: "wire", asOf: sampleAsOf() },
+    news: { source: "sample", asOf: sampleAsOf() },
   };
 }
 
@@ -23,7 +23,7 @@ export function formatProvenanceBadge(p: FieldProvenance): string {
   const src = p.source.toUpperCase();
   const short =
     p.asOf.length > 16 && p.asOf.includes("T")
-      ? p.asOf.slice(0, 16).replace("T", " ")
+      ? `${p.asOf.slice(0, 16).replace("T", " ")}${p.asOf.endsWith("Z") ? " UTC" : ""}`
       : p.asOf;
   return `${src} · ${short}`;
 }

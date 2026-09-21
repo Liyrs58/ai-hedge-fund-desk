@@ -76,6 +76,30 @@ function breaches(exp: Exposure, ticker: string, sector: string): string[] {
   return out;
 }
 
+function isRiskReducing(next: Exposure, current: Exposure, ticker: string): boolean {
+  return (
+    next.grossPct < current.grossPct &&
+    next.shortPct <= current.shortPct &&
+    Math.abs(next.namePct[ticker] ?? 0) < Math.abs(current.namePct[ticker] ?? 0)
+  );
+}
+
+function applicableBreaches(
+  next: Exposure,
+  current: Exposure,
+  ticker: string,
+  sector: string,
+): string[] {
+  const hit = breaches(next, ticker, sector);
+  if (
+    current.drawdownPct > RISK_LIMITS.maxDrawdownPct &&
+    isRiskReducing(next, current, ticker)
+  ) {
+    return hit.filter((id) => id !== "DRAWDOWN");
+  }
+  return hit;
+}
+
 function flagRule(
   id: string,
   label: string,
@@ -183,36 +207,15 @@ export function evaluateTicket(
     );
   }
 
-  if (current.drawdownPct > RISK_LIMITS.maxDrawdownPct) {
-    return {
-      decision: "veto",
-      side: "HOLD",
-      sizePct: 0,
-      shares: 0,
-      trimmed: false,
-      vetoed: true,
-      rules: [
-        ...rules,
-        flagRule(
-          "DRAWDOWN",
-          "Drawdown",
-          "FAIL",
-          `Book DD ${current.drawdownPct.toFixed(1)}% > ${RISK_LIMITS.maxDrawdownPct}%. No add.`,
-        ),
-      ],
-      note: `Veto. Drawdown ${current.drawdownPct.toFixed(1)}% vs ${RISK_LIMITS.maxDrawdownPct}% hard. No ticket.`,
-    };
-  }
-
   let shares = sharesForPct(current.nav, sizePct, quote.mark);
   let next = hypothetical(book, quote, quotes, side, shares);
-  let hit = breaches(next, quote.symbol, quote.sector);
+  let hit = applicableBreaches(next, current, quote.symbol, quote.sector);
 
   while (hit.length && sizePct >= MIN_TRADE_PCT) {
     sizePct = roundHalf(sizePct - 0.5);
     shares = sharesForPct(current.nav, sizePct, quote.mark);
     next = hypothetical(book, quote, quotes, side, shares);
-    hit = breaches(next, quote.symbol, quote.sector);
+    hit = applicableBreaches(next, current, quote.symbol, quote.sector);
     decision = "trim";
   }
 
